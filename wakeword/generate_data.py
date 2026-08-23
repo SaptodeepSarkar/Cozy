@@ -223,6 +223,7 @@ def cached_count(out_dir):
 
 def targets(mode):
     counts = dict(CFG["counts"])
+    counts["seed_copy"] = int(CFG.get("seed_copy", 10))
     if mode == "smoke":
         counts.update({
             "positive": 24,
