@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import socket
 import subprocess
 import sys
 import time
@@ -220,6 +221,7 @@ def fetch_openwakeword_features():
 
 
 def main():
+    socket.setdefaulttimeout(30)  # no network call may ever stall forever
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only-openwakeword", action="store_true",
                         help="only fetch the openWakeWord feature models")

@@ -11,14 +11,15 @@ if [[ ! -d .venv ]]; then
 fi
 source .venv/bin/activate
 
-echo "[run_all/$MODE] step 1/3 - downloading models"
-python download_models.py
+echo "[run_all/$MODE] step 1/3 - downloading models (best effort)"
+timeout 900 python -u download_models.py \
+  || echo "[run_all/$MODE] WARN: some downloads incomplete - continuing with cached models"
 
 echo "[run_all/$MODE] step 2/3 - generating training data"
-python generate_data.py --mode "$MODE"
+python -u generate_data.py --mode "$MODE"
 
 echo "[run_all/$MODE] step 3/3 - training + exporting the wake word model"
-python train_wakeword.py
+python -u train_wakeword.py
 
 echo ""
 echo "[run_all/$MODE] finished. Try it live:"
