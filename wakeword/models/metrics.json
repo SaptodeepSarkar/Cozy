@@ -1,0 +1,14 @@
+{
+  "model": "cozy_v1",
+  "window_frames": 16,
+  "embedding_dim": 96,
+  "epochs_trained": 12,
+  "val_auc": 0.9944,
+  "val_accuracy_at_0.5": 0.9587,
+  "val_precision_at_0.5": 0.9389,
+  "val_recall_at_0.5": 0.9334,
+  "val_false_positive_rate_at_0.5": 0.0292,
+  "similar_words_false_alarm_rate": 0.0537,
+  "suggested_threshold": 0.39999999999999997,
+  "trained_at": "2026-08-23 23:47:51"
+}

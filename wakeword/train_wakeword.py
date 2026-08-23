@@ -73,19 +73,21 @@ class FeatureExtractor:
         self.target = CLIP
 
     def embeddings(self, pcm_f32):
+        """Extract features EXACTLY like deployment: feed 80 ms chunks
+        sequentially through one persistent AudioFeatures instance and read
+        its feature buffer - these are the very windows Model.predict scores
+        at inference time (frame i = last 16 buffer frames ending at chunk i).
+        """
         scaled = np.clip(np.round(pcm_f32 * 32767.0), -32768, 32767)
         pcm16 = scaled.astype(np.int16)
         x = pcm16[: self.target]
         if len(x) < self.target:
             pad = np.zeros(self.target - len(x), dtype=np.int16)
             x = np.concatenate([x, pad])
-        if len(x) % 1280 != 0:
-            keep = (len(x) // 1280) * 1280
-            x = x[:keep]
-        out = self.af.embed_clips(np.stack([x]))
-        emb = np.asarray(out, dtype=np.float32)
-        if emb.ndim == 3:
-            emb = emb[0]
+        self.af.reset()
+        for i in range(0, len(x), 1280):
+            self.af(x[i:i + 1280])
+        emb = np.asarray(self.af.feature_buffer, dtype=np.float32)
         if emb.ndim != 2 or emb.shape[1] != EMB_DIM:
             raise RuntimeError("unexpected embedding shape " + str(emb.shape))
         return emb
@@ -243,7 +245,10 @@ class ExportWrapper(nn.Module):
 
     def forward(self, x):
         flat = x.reshape(x.shape[0], -1)
-        return torch.sigmoid(self.net(flat))
+        # bypass WWNet.forward: keep the [B, 1] output rank that
+        # openWakeWord's loader introspects (outputs shape must be [N, 1])
+        logits = self.net.net(flat)
+        return torch.sigmoid(logits)
 
 
 def auc_score(y_true, scores):
