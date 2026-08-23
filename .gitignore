@@ -1,0 +1,14 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# virtual environments
+.venv*/
+
+# heavyweight working data (downloads, synthetic bulk audio, caches)
+wakeword/work/
+
+# OS noise
+.DS_Store
+Thumbs.db
