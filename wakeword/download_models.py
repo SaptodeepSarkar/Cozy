@@ -58,6 +58,11 @@ MULTISPEAKER_URL = (
     + MULTISPEAKER_NAME
 )
 
+# piper-sample-generator imports piper_train, which ships only inside the
+# piper repository (src/python). We vendor those sources automatically.
+VENDOR_DIR = WORK / "vendor"
+PIPER_SRC_URL = "https://github.com/rhasspy/piper/archive/refs/heads/master.tar.gz"
+
 
 def voice_url(locale, speaker, quality, voice):
     return HF_BASE + "/" + locale + "/" + speaker + "/" + quality + "/" \
@@ -152,6 +157,26 @@ def download(urls, dest, optional=False, label=""):
                      + " | rerun later - finished parts resume automatically")
 
 
+def vendor_piper_python():
+    """Ensures work/vendor/piper/src/python (with piper_train) exists."""
+    target = VENDOR_DIR / "piper" / "src" / "python"
+    if (target / "piper_train").is_dir():
+        print("  = vendored piper_train sources (cached)")
+        return str(target)
+    VENDOR_DIR.mkdir(parents=True, exist_ok=True)
+    tar_path = VENDOR_DIR / "piper_master.tar.gz"
+    download([PIPER_SRC_URL], tar_path, label="")
+    import tarfile
+    with tarfile.open(tar_path, "r:gz") as tf:
+        members = [m for m in tf.getmembers() if "/src/python/" in m.name]
+        tf.extractall(VENDOR_DIR, members=members, filter="data")
+    if not (VENDOR_DIR / "piper-master" / "src" / "python").is_dir():
+        raise SystemExit("[download_models] unexpected piper archive layout")
+    os.replace(VENDOR_DIR / "piper-master", VENDOR_DIR / "piper")
+    print("  = vendored piper_train sources -> " + str(target))
+    return str(target)
+
+
 def fetch_openwakeword_features():
     try:
         from openwakeword.utils import download_models as oww_download
@@ -180,7 +205,11 @@ def main():
     args = parser.parse_args()
 
     if not args.only_openwakeword:
-        print("[1/3] Piper TTS voices")
+        print("[1/4] piper_train Python sources (vendored via PYTHONPATH)")
+        vendor_path = vendor_piper_python()
+        (VENDOR_DIR / "PYTHONPATH.txt").write_text(vendor_path)
+
+        print("[2/4] Piper TTS voices")
         for voice, meta in PIPER_VOICES.items():
             url = voice_url(*meta, voice)
             ok = download([url], VOICES_DIR / (voice + ".onnx"),
@@ -191,14 +220,14 @@ def main():
                          optional=True)
 
         if args.no_multispeaker:
-            print("[2/3] LibriTTS-R multi-speaker generator: SKIPPED")
+            print("[3/4] LibriTTS-R multi-speaker generator: SKIPPED")
         else:
-            print("[2/3] LibriTTS-R multi-speaker generator (~250 MB)")
+            print("[3/4] LibriTTS-R multi-speaker generator (~250 MB)")
             download([MULTISPEAKER_URL],
                      WORK / "models" / MULTISPEAKER_NAME,
                      optional=True)
 
-    print("[3/3] openWakeWord feature models")
+    print("[4/4] openWakeWord feature models")
     fetch_openwakeword_features()
 
     print("")

@@ -32,7 +32,7 @@ seed_copy: 10            # demo clips copied into data/cozy and data/similar
 piper:
   multispeaker_generator: true  # use LibriTTS-R generator when downloaded
   max_speakers: 48              # distinct voices mixed per run
-  batch_size: 48                # drop to 8-16 when running on CPU
+  batch_size: 24                # safe for 6 GB GPUs; drop to 8-16 on CPU
 
 training:
   window_frames: 16       # embedding frames per detection window

@@ -37,6 +37,8 @@ TR = CFG["training"]
 W = int(TR["window_frames"])
 STRIDE = int(TR["stride_frames"])
 EMB_DIM = 96
+SR = int(CFG["audio"]["sample_rate"])
+CLIP = int(float(CFG["audio"]["clip_seconds"]) * SR)
 
 
 def collect_clips():
@@ -63,19 +65,27 @@ def augment(pcm, rng):
 
 
 class FeatureExtractor:
-    """Wraps openWakeWord frozen melspectrogram + embedding models."""
+    """Wraps openWakeWord AudioFeatures (embed_clips API, v0.6+)."""
 
     def __init__(self):
-        from openwakeword.models import AudioFeatures
+        from openwakeword.model import AudioFeatures
         self.af = AudioFeatures()
+        self.target = CLIP
 
     def embeddings(self, pcm_f32):
         scaled = np.clip(np.round(pcm_f32 * 32767.0), -32768, 32767)
         pcm16 = scaled.astype(np.int16)
-        out = self.af(pcm16)
-        emb = np.asarray(out["embeddings"], dtype=np.float32)
-        while emb.ndim > 2:
-            emb = emb.squeeze(axis=0)
+        x = pcm16[: self.target]
+        if len(x) < self.target:
+            pad = np.zeros(self.target - len(x), dtype=np.int16)
+            x = np.concatenate([x, pad])
+        if len(x) % 1280 != 0:
+            keep = (len(x) // 1280) * 1280
+            x = x[:keep]
+        out = self.af.embed_clips(np.stack([x]))
+        emb = np.asarray(out, dtype=np.float32)
+        if emb.ndim == 3:
+            emb = emb[0]
         if emb.ndim != 2 or emb.shape[1] != EMB_DIM:
             raise RuntimeError("unexpected embedding shape " + str(emb.shape))
         return emb

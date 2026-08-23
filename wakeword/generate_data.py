@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import random
 import shutil
 import subprocess
@@ -39,6 +40,20 @@ CFG = yaml.safe_load((HERE / "config.yaml").read_text())
 SR = int(CFG["audio"]["sample_rate"])
 CLIP = int(float(CFG["audio"]["clip_seconds"]) * SR)
 MULTISPEAKER_PT = WORK / "models" / MULTISPEAKER_NAME
+
+
+def piper_env():
+    """Environment with vendored piper_train sources on PYTHONPATH."""
+    env = os.environ.copy()
+    marker = WORK / "vendor" / "PYTHONPATH.txt"
+    if marker.exists():
+        extra = marker.read_text().strip()
+        env["PYTHONPATH"] = extra + os.pathsep + env.get("PYTHONPATH", "")
+    return env
+
+
+def piper_vendor_ready():
+    return (WORK / "vendor" / "PYTHONPATH.txt").exists()
 
 # Everyday sentences the detector must stay silent on.
 NEGATIVE_PHRASES = [
@@ -68,6 +83,9 @@ def slug(text: str) -> str:
 
 
 def voice_models() -> list:
+    if not piper_vendor_ready():
+        raise SystemExit("[generate_data] piper_train sources missing - "
+                         "run python download_models.py once first")
     onnx = sorted(VOICES_DIR.glob("*.onnx"))
     if not onnx:
         raise SystemExit("[generate_data] no Piper voices found - "
@@ -98,7 +116,8 @@ def piper_generate(text, scratch, count, models, batch_size, max_speakers):
     attempt = 0
     while True:
         attempt += 1
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                          env=piper_env())
         wavs = sorted(scratch.glob("*.wav"))
         if wavs:
             if proc.returncode != 0:
@@ -146,16 +165,31 @@ def save(pcm, dest):
 
 
 def synth_bucket(texts, out_dir, file_stem, tgt, models, max_speakers,
-                 batch_size, rng):
-    """Generates tgt processed clips cycling through texts."""
+                 batch_size, rng, fallback=None):
+    """Generates tgt processed clips cycling through texts.
+
+    If generation keeps failing with the primary engine (e.g. the big
+    multi-speaker model), switches to the fallback voice bank instead.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
+    active_models = list(models)
+    active_ms = max_speakers
     made = 0
     round_no = 0
     while made < tgt and round_no < 80:
         text = texts[round_no % len(texts)]
         want = min(max(batch_size * 4, 64), tgt - made)
-        wavs = piper_generate(text, WORK / "scratch" / file_stem, want,
-                              models, batch_size, max_speakers)
+        try:
+            wavs = piper_generate(text, WORK / "scratch" / file_stem, want,
+                                  active_models, batch_size, active_ms)
+        except SystemExit as exc:
+            if fallback is not None and active_models != list(fallback):
+                print("[generate_data] primary engine failed for "
+                      + file_stem + " -> switching to voice-bank fallback")
+                active_models = list(fallback)
+                active_ms = None
+                continue
+            raise exc
         for wav in wavs:
             if made >= tgt:
                 break
@@ -237,7 +271,7 @@ def main():
         out = WORK / "synthetic"
         if args.force or cached_count(out) < t["positive"]:
             n = synth_bucket(variants, out, "cozy", t["positive"], models,
-                             ms, batch_size, rng)
+                             ms, batch_size, rng, fallback=voices)
             print("  wrote " + str(n))
         else:
             print("  = cached")
