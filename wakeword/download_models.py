@@ -48,11 +48,9 @@ PIPER_VOICES = {
     "en_US-lessac-medium": ("en_US", "lessac", "medium"),
     "en_US-amy-medium": ("en_US", "amy", "medium"),
     "en_US-ryan-medium": ("en_US", "ryan", "medium"),
-    "en_GB-jenny-medium": ("en_GB", "jenny", "medium"),
     "en_GB-alan-medium": ("en_GB", "alan", "medium"),
     "en_GB-northern_english_male-medium": (
         "en_GB", "northern_english_male", "medium"),
-    "en_IN-neupane-medium": ("en_IN", "neupane", "medium"),  # may 404
 }
 
 MULTISPEAKER_NAME = "en_US-libritts_r-medium.pt"
@@ -140,8 +138,12 @@ def download(urls, dest, optional=False, label=""):
                 return True
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
+                if "404" in last_error or "Not Found" in last_error:
+                    break  # permanent - this URL does not exist
                 if part.exists() and part.stat().st_size == 0:
                     part.unlink()
+        if "404" in last_error or "Not Found" in last_error:
+            break  # all candidates agree: file does not exist upstream
         if attempt < MAX_ATTEMPTS:
             delay = min(60, BACKOFF_BASE * (2 ** (attempt - 1)))
             delay += random.uniform(0, 3)
