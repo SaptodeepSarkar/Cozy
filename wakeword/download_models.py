@@ -24,6 +24,8 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -179,21 +181,42 @@ def vendor_piper_python():
 
 def fetch_openwakeword_features():
     try:
-        from openwakeword.utils import download_models as oww_download
+        import openwakeword
     except ImportError as exc:
         raise SystemExit("[download_models] openWakeWord is not installed. "
                          "Run bash setup.sh first.") from exc
+
+    # 1) skip the network entirely when the files are already on disk
+    res = Path(openwakeword.__file__).parent / "resources" / "models"
+    needed = ["melspectrogram.onnx", "embedding_model.onnx"]
+    if all((res / n).exists() for n in needed):
+        print("  = feature models already on disk")
+        return
+
+    # 2) otherwise download inside a HARD-TIMEOUT subprocess: a stalled
+    #    socket can slow a retry but can never wedge the whole pipeline
+    child = (
+        "from openwakeword.utils import download_models as d\n"
+        "try:\n"
+        "    d(model_names=['melspectrogram', 'embedding_model'])\n"
+        "except TypeError:\n"
+        "    d()\n"
+    )
     for attempt in range(1, 4):
         try:
-            oww_download(model_names=["melspectrogram", "embedding_model"])
-            print("  = openWakeWord feature models ready")
-            return
-        except Exception as exc:  # noqa: BLE001
-            print("  .. openWakeWord download failed ("
-                  + str(exc)[:100] + "), attempt " + str(attempt) + "/3")
-            time.sleep(10 * attempt)
+            proc = subprocess.run([sys.executable, "-c", child],
+                                  timeout=240)
+            if proc.returncode == 0:
+                print("  = openWakeWord feature models ready")
+                return
+            print("  .. downloader exit " + str(proc.returncode)
+                  + ", attempt " + str(attempt) + "/3")
+        except subprocess.TimeoutExpired:
+            print("  .. downloader timed out after 240 s, attempt "
+                  + str(attempt) + "/3")
+        time.sleep(10 * attempt)
     raise SystemExit("[download_models] could not fetch openWakeWord feature "
-                     "models - check connection and rerun (it caches)")
+                     "models - rerun later; finished parts are cached")
 
 
 def main():
