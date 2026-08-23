@@ -80,6 +80,7 @@ declare -A PKGS=(
   [soundfile]=soundfile
   [audiomentations]=audiomentations
   [onnxruntime]=onnxruntime
+  [onnxscript]=onnxscript
   [scikit-learn]=sklearn
   [tqdm]=tqdm
   [requests]=requests

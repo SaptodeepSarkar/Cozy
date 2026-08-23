@@ -385,15 +385,25 @@ def main():
     MODELS_DIR.mkdir(exist_ok=True)
     name = str(CFG["model"]["name"])
 
+    # checkpoint FIRST - a failed export must never lose the training run
+    torch.save(model.state_dict(), MODELS_DIR / (name + ".pt"))
+
     wrapper = ExportWrapper(model).eval().float()
     dummy = torch.zeros(1, W, EMB_DIM)
     onnx_path = MODELS_DIR / (name + ".onnx")
-    torch.onnx.export(wrapper, dummy, str(onnx_path),
-                      input_names=["input"], output_names=["scores"],
-                      dynamic_axes={"input": {0: "batch"},
-                                    "scores": {0: "batch"}},
-                      opset_version=13)
-    torch.save(model.state_dict(), MODELS_DIR / (name + ".pt"))
+    export_kwargs = {
+        "input_names": ["input"],
+        "output_names": ["scores"],
+        "dynamic_axes": {"input": {0: "batch"}, "scores": {0: "batch"}},
+        "opset_version": 13,
+    }
+    try:
+        torch.onnx.export(wrapper, dummy, str(onnx_path), **export_kwargs)
+    except Exception as exc:
+        print("[train] default exporter failed (" + str(exc)[:90]
+              + ") - retrying with the legacy TorchScript exporter")
+        torch.onnx.export(wrapper, dummy, str(onnx_path),
+                          dynamo=False, **export_kwargs)
 
     report = {
         "model": name,
