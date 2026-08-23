@@ -24,6 +24,7 @@ import random
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -92,18 +93,30 @@ def piper_generate(text, scratch, count, models, batch_size, max_speakers):
         cmd += ["--model", str(model)]
     if max_speakers is not None:
         cmd += ["--max-speakers", str(max_speakers)]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    wavs = sorted(scratch.glob("*.wav"))
-    if not wavs:
-        tail_out = (proc.stdout or "")[-1500:]
-        tail_err = (proc.stderr or "")[-1500:]
-        sys.stderr.write(tail_out)
-        sys.stderr.write("\n")
-        sys.stderr.write(tail_err)
-        sys.stderr.write("\n")
-        raise SystemExit("[generate_data] piper produced nothing for "
-                         + repr(text))
-    return wavs
+    last_out = ""
+    last_err = ""
+    attempt = 0
+    while True:
+        attempt += 1
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        wavs = sorted(scratch.glob("*.wav"))
+        if wavs:
+            if proc.returncode != 0:
+                print("[generate_data] warning: piper exited "
+                      + str(proc.returncode) + " but produced "
+                      + str(len(wavs)) + " clips")
+            return wavs
+        last_out = (proc.stdout or "")[-1200:]
+        last_err = (proc.stderr or "")[-1200:]
+        if attempt >= 3:
+            break
+        print("[generate_data] piper attempt " + str(attempt) + "/3 "
+              + "produced nothing for " + repr(text) + " - retrying")
+        time.sleep(15 * attempt)
+    sys.stderr.write(last_out + "\n")
+    sys.stderr.write(last_err + "\n")
+    raise SystemExit("[generate_data] piper failed after 3 attempts for "
+                     + repr(text))
 
 
 def postprocess(src, rng):
