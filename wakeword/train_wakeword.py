@@ -386,6 +386,7 @@ def main():
     name = str(CFG["model"]["name"])
 
     # checkpoint FIRST - a failed export must never lose the training run
+    model = model.to("cpu")  # export and runtime checks run on CPU
     torch.save(model.state_dict(), MODELS_DIR / (name + ".pt"))
 
     wrapper = ExportWrapper(model).eval().float()
