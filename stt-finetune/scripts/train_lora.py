@@ -75,6 +75,8 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--lora-r", type=int, default=32)
     ap.add_argument("--max-steps", type=int, default=-1)
+    ap.add_argument("--no-grad-ckpt", action="store_true")
+    ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--eval-steps", type=int, default=100)
     ap.add_argument("--out", default=str(CHECKPOINT_DIR / "lora_cozy_v1"))
     args = ap.parse_args()
@@ -135,8 +137,8 @@ def main():
         lr_scheduler_type="linear",
         warmup_steps=40,
         bf16=True,
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
+        gradient_checkpointing=not args.no_grad_ckpt,
+        gradient_checkpointing_kwargs=None if args.no_grad_ckpt else {"use_reentrant": False},
         eval_strategy="steps" if args.max_steps < 0 else "no",
         eval_steps=args.eval_steps,
         save_strategy="steps" if args.max_steps < 0 else "no",
@@ -149,13 +151,34 @@ def main():
         generation_max_length=224,
         logging_steps=1,
         remove_unused_columns=False,
-        dataloader_num_workers=2,
+        dataloader_num_workers=args.workers,
         report_to=[],
         label_names=["labels"],
         seed=42,
     )
 
-    trainer = Seq2SeqTrainer(
+    import os
+    parent = Seq2SeqTrainer
+
+    if os.environ.get("COZY_DIAG"):
+        class DiagTrainer(Seq2SeqTrainer):
+            n = 0
+            def compute_loss(self, model, inputs, return_outputs=False,
+                             num_items_in_batch=None):
+                out = super().compute_loss(model, inputs, return_outputs,
+                                           num_items_in_batch=num_items_in_batch)
+                if self.n < 3:
+                    f, lab = inputs["input_features"], inputs["labels"]
+                    lv = float(out[0].detach()) if return_outputs else float(out.detach())
+                    with torch.no_grad():
+                        ref = model(**inputs).loss.item()
+                    print(f"[diag] micro={self.n} feat(std={f.float().std():.3f}) "
+                          f"LOSS={lv:.3f} | same-batch-recompute={ref:.3f}", flush=True)
+                    self.n += 1
+                return out
+        parent = DiagTrainer
+
+    trainer = parent(
         model=model,
         args=targs,
         train_dataset=train_ds,

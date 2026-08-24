@@ -11,13 +11,18 @@ Hardware target: NVIDIA RTX 3050 6GB (any ≥6GB CUDA GPU works).
 | Stage | Script | What it does |
 |---|---|---|
 | 0. Setup | `source env.sh` + `.venv` | project-local HF cache; reuses system CUDA torch |
-| 1. Assets | `scripts/download_assets.py` + `scripts/build_indian_corpus.py` | `openai/whisper-small` + Indian-English corpora: **kaushalgawri/indian_accent_en_train** (~4.5k clips tagged accent=indian) & **skbose NPTEL Indian-English lectures** → decoded to plain wavs under `data/` |
-| 2. Record | `python3 scripts/record_voice.py` | guided mic recorder, 6 themed sessions × 15 lines, resumable |
-| 3. Manifests | `scripts/prepare_data.py` | merges FLEURS + your clips (auto up-samples yours ~12% of each epoch), holds out one session as personal test set |
-| 4. Baseline | `scripts/baseline_eval.py` | WER of the stock model on the same eval set |
-| 5. Train | `scripts/train_lora.py` | LoRA (r=32 on q/v projections), fp16, gradient checkpointing — fits in 6GB |
+| 1. Assets | `scripts/download_assets.py` + `scripts/build_indian_corpus.py` | `openai/whisper-small` + Indian-English corpora: **kaushalgawri/indian_accent_en_train** (~4.5k clips tagged accent=indian) & Santhosh accent set → decoded to plain wavs under `data/` |
+| 2a. Clean | `python3 scripts/clean_recordings.py` | energy-based head/tail silence strip + peak-normalise your takes (in place, idempotent) |
+| 2b. Align | `python3 scripts/align_words.py` | word-level transcript↔audio mapping: adaptive-floor hysteresis VAD → speech islands → monotonic DP alignment → per-word timestamps + take-quality flags (`recordings/session_*/align/`) |
+| 3. Manifests | `scripts/prepare_data.py` | merges corpora + your clips (~12% of each epoch), holds out your newest session as personal test set |
+| 4. Baseline | `scripts/baseline_eval.py` | stock whisper-small = **11.93% WER** on Indian-English eval |
+| 5. Train | `scripts/train_lora.py` | LoRA (r=32 q/v), fp32 weights + bf16 autocast, per-source WER (`wer_user` vs `wer_corpus`) so personal gains never come at others' expense |
 | 6. Export | `scripts/merge_export.py` | merges LoRA → plain HF model → **CTranslate2 int8_float16** for faster-whisper |
-| 7. Use | `scripts/infer.py --mic 5` | transcribe from mic or file with your model |
+| 7. Use | `scripts/infer.py --mic 5` | transcribe from mic or file with your model (dGPU-pinned) |
+
+> Note: under transformers v5, the *logged* train loss is summed over the
+> gradient-accumulation window (≈ mean × `--grad-accum`). Sanity-check against
+> eval `loss`/WER numbers, which are proper means.
 
 ## Quickstart
 
