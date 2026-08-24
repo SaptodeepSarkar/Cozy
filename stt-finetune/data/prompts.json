@@ -1,0 +1,137 @@
+{
+  "sample_rate": 16000,
+  "sessions": [
+    {
+      "id": 1,
+      "name": "assistant_commands",
+      "title": "Everyday assistant commands (speak naturally, as if talking to Cozy)",
+      "lines": [
+        "Hey Cozy, what time is it right now?",
+        "Cozy, what's the weather like in Kolkata today?",
+        "Set a timer for ten minutes.",
+        "Remind me to call the bank tomorrow at eleven.",
+        "Play some soft music in the background.",
+        "What's on my calendar for this week?",
+        "Open the terminal and run the tests.",
+        "Turn down the volume a little.",
+        "Add milk, bread and eggs to my shopping list.",
+        "Cozy, take a note: submit the project report by Friday.",
+        "Search for the nearest coffee shop.",
+        "What is the temperature outside right now?",
+        "Stop the music after this song.",
+        "Wake up cozy, we have work to do.",
+        "Goodnight cozy, shut everything down."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "indian_context",
+      "title": "Indian names, cities and everyday words",
+      "lines": [
+        "I need to catch the metro from Salt Lake to Howrah station.",
+        "Book a cab to Netaji Subhas Chandra Bose International Airport.",
+        "My friend Abhishek lives near Jayanagar in Bengaluru.",
+        "Let's order biryani from that place near Park Street.",
+        "The train from Howrah to Delhi Rajdhani leaves at four thirty.",
+        "Send a message to Priya about tomorrow's meeting.",
+        "I prefer filter coffee over masala chai in the morning.",
+        "The GST invoice for last month hasn't arrived yet.",
+        "We celebrated Diwali at my cousin's flat in Andheri West.",
+        "Is the Vande Bharat express faster than the Shatabdi?",
+        "My PAN card and Aadhaar are in the top drawer.",
+        "Traffic on the Eastern Metropolitan Bypass is terrible today.",
+        "She works at an IT park in Hinjewadi, Pune.",
+        "Let's watch the match at Eden Gardens this Sunday.",
+        "Please recharge my phone with the two ninety nine plan."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "numbers_dates_tech",
+      "title": "Numbers, dates, times and technical words",
+      "lines": [
+        "The meeting got moved from 3:15 PM to 4:45 PM.",
+        "My laptop has 16 gigabytes of RAM and a solid state drive.",
+        "Call me on 98300 twelve three four five.",
+        "The invoice total came to rupees forty two thousand five hundred.",
+        "Python version three point one two is installed on this machine.",
+        "Deploy the build to production on Monday, the twenty third of August.",
+        "The Wi-Fi password is cozy dash local dash two zero two six.",
+        "I reached eighty percent accuracy on the validation set.",
+        "Download speed is around fifty megabits per second.",
+        "Set an alarm for six o'clock in the morning.",
+        "The file is exactly one point four gigabytes.",
+        "Train the model for three epochs with batch size eight.",
+        "Pin code seven thousand zero nine one.",
+        "He was born on January the fifth, nineteen ninety eight.",
+        "Reduce the learning rate to zero point zero zero zero one."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "general_prose",
+      "title": "Natural prose (read clearly, like narrating)",
+      "lines": [
+        "The monsoon arrived early this year, bringing relief from the summer heat.",
+        "Reading a few pages before bed helps me sleep better than scrolling on my phone.",
+        "The committee will review all applications before announcing the final list.",
+        "A balanced diet and regular exercise matter more than any supplement.",
+        "The library stays open until eight in the evening on weekdays.",
+        "Our team finished the sprint backlog two days ahead of schedule.",
+        "Learning to cook simple meals saves both money and time.",
+        "The museum has a wonderful collection of miniature paintings.",
+        "Cycling to work keeps me active and clears my head before meetings.",
+        "The documentary explained how coral reefs survive in warm waters.",
+        "Every Sunday, we visit the market to buy fresh vegetables.",
+        "The new policy allows employees to work remotely twice a week.",
+        "His presentation on renewable energy impressed the entire panel.",
+        "Rain water harvesting should be compulsory in every apartment complex.",
+        "The old bookshop near the college still sells second hand novels for fifty rupees."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "hard_cases",
+      "title": "Hard cases: short, long, punctuation-heavy",
+      "lines": [
+        "Yes.",
+        "No, wait.",
+        "Okay, done!",
+        "Hmm, let me think about it.",
+        "Sorry, could you repeat that?",
+        "Wait, stop, cancel that!",
+        "One more time, slower please.",
+        "What?! Are you serious?",
+        "Hi cozy, good morning!",
+        "Thanks, that's all for now.",
+        "E-mail me the report at saptodeep dot dev at gmail dot com.",
+        "It's Dr. Sharma's appointment at St. John's hospital, Room no. 204.",
+        "\"Quote me the price,\" he said, \"including GST and delivery.\"",
+        "The recipe needs 250g flour, 2 eggs, 1 tsp baking powder, and a pinch of salt.",
+        "Cozy, remind me: mom's birthday gift, dad's medicines, and my passport renewal."
+      ]
+    },
+    {
+      "id": 6,
+      "name": "spontaneous_style",
+      "title": "Conversational style (speak casually, like really chatting)",
+      "lines": [
+        "Arre cozy, why did you mute yourself again?",
+        "I don't know yaar, maybe we should just order in tonight.",
+        "Actually wait, cancel my previous instruction.",
+        "You know what, just play something chill.",
+        "Bas, that's enough work for today.",
+        "Could you kindly repeat the last part?",
+        "I'll be home by eight-ish, start the geyser at seven forty five.",
+        "Tell me honestly, does this accent confuse you?",
+        "One second, someone's at the door.",
+        "Okay listen carefully, this is important: back up the projects folder first.",
+        "Thoda loud please, I can't hear you properly.",
+        "Great job cozy, you're getting better at this.",
+        "Ugh, the internet is crawling again today.",
+        "Let me spell it: S-A-P-T-O-D-E-E-P.",
+        "Alright, that's a wrap for this session."
+      ]
+    }
+  ]
+}

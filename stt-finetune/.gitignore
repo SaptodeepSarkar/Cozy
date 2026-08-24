@@ -1,0 +1,9 @@
+.venv/
+.hf_cache/
+recordings/
+data/fleurs/
+data/manifests/
+checkpoints/
+output/
+__pycache__/
+*.pyc

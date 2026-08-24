@@ -213,8 +213,8 @@ def build_dataset(fe, rng, limit=0):
     parts_x = []
     parts_y = []
     if len(y_sim_tr) > 0:
-        parts_x.append(np.repeat(X_sim_tr, 3, axis=0))
-        parts_y.append(np.repeat(y_sim_tr, 3))
+        parts_x.append(np.repeat(X_sim_tr, 2, axis=0))
+        parts_y.append(np.repeat(y_sim_tr, 2))
     if len(y_neg_tr) > 0:
         parts_x.append(X_neg_tr)
         parts_y.append(y_neg_tr)
@@ -362,7 +362,14 @@ def main():
                             weight_decay=float(TR["weight_decay"]))
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt,
                                                        T_max=args.epochs)
-    loss_fn = nn.BCEWithLogitsLoss()
+    n_pos = int(ty.sum().item())
+    n_neg = int(len(ty) - n_pos)
+    pos_weight_value = max(1.0, n_neg / max(1, n_pos))
+    loss_fn = nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor([pos_weight_value],
+                                dtype=torch.float32,
+                                device=device))
+    print("[train] pos_weight=" + format(pos_weight_value, ".2f"))
     bs = int(TR["batch_size"])
     patience = 4
     best_val = float("inf")
@@ -393,6 +400,11 @@ def main():
               + "  val_recall=" + format(metrics["recall"], ".3f")
               + "  val_fpr=" + format(metrics["fpr"], ".4f"))
 
+        if epoch >= 3 and metrics["recall"] == 0.0:
+            raise SystemExit(
+                "[train] model collapsed to always-negative (recall 0 at "
+                "epoch " + str(epoch) + ") - refusing to export junk; "
+                "needs better features/data")
         score = avg_loss - metrics["auc"]
         if score < best_val:
             best_val = score
