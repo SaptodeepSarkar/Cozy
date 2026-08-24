@@ -1,14 +1,8 @@
 #!/usr/bin/env python
-"""Build train/eval manifests combining FLEURS en_in (Indian English) with YOUR
-recorded voice (recordings/session_*/), up-sampling your clips so they get a
-healthy share of gradient steps without letting ~90 clips swamp ~2,500.
+"""Build train/eval manifests combining the Indian-English corpora with YOUR
+recordings, up-sampling your voice so it gets a healthy share of gradient steps.
 
-Outputs (data/manifests/):
-    train.jsonl   {audio_path, text, source}
-    eval.jsonl    held-out FLEURS val/test + held-out user session(s)
-
-Run:  .venv/bin/python scripts/prepare_data.py
-      optional: --eval-sessions 6  (reserve a whole session as personal holdout)
+Run:  .venv/bin/python scripts/prepare_data.py [--user-repeat auto]
 """
 import argparse
 import json
@@ -17,52 +11,21 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import MANIFEST_DIR, RECORDINGS_DIR, ROOT  # noqa: E402
+from common import DATA_DIR, MANIFEST_DIR, RECORDINGS_DIR  # noqa: E402
 
 random.seed(42)
-FLEURS_RAW = ROOT / "data" / "fleurs_raw" / "en_in"
+POOLS = ["cv_indian", "nptel_indian"]
+EVAL_TAKE = {"cv_indian": 120, "nptel_indian": 60}
 
 
-def parse_fleurs_tsv(tsv: Path):
-    """FLEURS tsv columns: id <tab> filename <tab> raw_transcription
-    <tab> transcription <tab> num_samples <tab> gender"""
-    wav_dir = tsv.parent / (tsv.stem.split("~")[-1]) if False else None
-    rows = []
-    with open(tsv, encoding="utf-8") as f:
-        header = f.readline()  # column names line? FLEURS tsv has no header; keep robust
-        f.seek(0)
-        for line in f:
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 4 or parts[0] == "id":
-                continue
-            _id, fname, raw_text = parts[0], parts[1], parts[2]
-            rows.append((_id, fname, raw_text.strip()))
-    return rows
-
-
-def find_split_dir(split: str) -> Path:
-    """Locate the extracted dir containing *.tsv + wavs for this split."""
-    hits = list(FLEURS_RAW.rglob(f"*{split}*.tsv"))
-    if not hits:
-        raise FileNotFoundError(f"No FLEURS {split} tsv under {FLEURS_RAW} — run download_assets.py")
-    return hits[0].parent
-
-
-def fleurs_rows(split: str, limit=None):
-    d = find_split_dir(split)
-    tsv = next(f for f in d.glob("*.tsv"))
-    out = []
-    for _id, fname, text in parse_fleurs_tsv(d / tsv.name):
-        wav = d / fname.split("/")[-1]
-        if not wav.exists():
-            # some layouts nest wavs one level deeper
-            cand = list(d.rglob(fname.split("/")[-1]))
-            if not cand:
-                continue
-            wav = cand[0]
-        out.append({"audio_path": str(wav), "text": text, "source": f"fleurs_{split}"})
-    random.shuffle(out)
-    return out[:limit] if limit else out
+def load_pool(name):
+    man = DATA_DIR / name / "manifest.jsonl"
+    if not man.exists():
+        return []
+    rows = [json.loads(l) for l in open(man) if l.strip()]
+    random.shuffle(rows)
+    n_eval = min(EVAL_TAKE.get(name, 50), max(1, len(rows) // 10))
+    return rows[n_eval:], rows[:n_eval]   # train_part, eval_part
 
 
 def collect_user_clips(eval_sessions: set):
@@ -85,11 +48,10 @@ def collect_user_clips(eval_sessions: set):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--user-repeat", default="auto",
-                    help="repeats per user clip ('auto' balances to ~12%% of an epoch)")
+                    help="repeats per user clip ('auto' ~12%% of epoch, or int)")
     ap.add_argument("--eval-sessions", type=int, nargs="*", default=None,
                     help="session ids reserved entirely for evaluation "
-                         "(default: newest recorded session, if >=2 sessions exist)")
-    ap.add_argument("--fleurs-eval-per-split", type=int, default=150)
+                         "(default: newest session, if >=2 sessions exist)")
     args = ap.parse_args()
 
     all_sessions = sorted(int(d.name.split("_")[1])
@@ -100,20 +62,26 @@ def main():
     print(f"User voice: {len(user_train)} train / {len(user_eval)} holdout clips "
           f"(holdout sessions: {sorted(eval_sessions)})")
 
-    train_rows = fleurs_rows("train") + user_train
-    n_repeats = 1
-    if args.user_repeat == "auto" and user_train:
-        n_fleurs = len(train_rows) - len(user_train)
-        frac = 0.12
-        n_repeats = max(1, min(25, round(frac / (1 - frac) * n_fleurs / len(user_train))))
-        train_rows += [dict(r) for _ in range(n_repeats - 1) for r in user_train]
-    elif isinstance(args.user_repeat, str) and args.user_repeat.isdigit():
-        n_repeats = int(args.user_repeat)
-        train_rows += [dict(r) for _ in range(n_repeats - 1) for r in user_train]
-    random.shuffle(train_rows)
+    train_rows, eval_rows = [], []
+    for pool in POOLS:
+        tr, ev = load_pool(pool)
+        print(f"{pool}: {len(tr)} train / {len(ev)} held-out")
+        train_rows += tr
+        eval_rows += ev
+    eval_rows += user_eval
 
-    eval_rows = (fleurs_rows("validation", args.fleurs_eval_per_split)
-                 + fleurs_rows("test", args.fleurs_eval_per_split) + user_eval)
+    base_n = len(train_rows)
+    if user_train:
+        if args.user_repeat == "auto":
+            frac = 0.12
+            n_repeats = max(1, min(25, round(frac / (1 - frac) * base_n / len(user_train))))
+        else:
+            n_repeats = int(args.user_repeat)
+        train_rows += [dict(r) for _ in range(n_repeats - 1) for r in user_train]
+        train_rows += user_train
+    else:
+        n_repeats = 0
+    random.shuffle(train_rows)
 
     MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
     for name, rows in (("train.jsonl", train_rows), ("eval.jsonl", eval_rows)):

@@ -10,7 +10,7 @@ os.environ.setdefault("HF_HOME", str(ROOT / ".hf_cache"))
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 BASE_MODEL = os.environ.get("COZY_BASE_MODEL", "openai/whisper-small")
-FLEURS_DIR = ROOT / "data" / "fleurs" / "en_in"
+DATA_DIR = ROOT / "data"
 MANIFEST_DIR = ROOT / "data" / "manifests"
 RECORDINGS_DIR = ROOT / "recordings"
 CHECKPOINT_DIR = ROOT / "checkpoints"

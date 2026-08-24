@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import (BASE_MODEL, CHECKPOINT_DIR, FLEURS_DIR, MANIFEST_DIR,
+from common import (BASE_MODEL, CHECKPOINT_DIR, MANIFEST_DIR,
                     english_normalizer, read_manifest)  # noqa: E402
 
 
 def build_datasets(max_audio_s=30.0):
-    """Returns (train_ds, eval_ds) with input_features + labels columns."""
+    """Returns (train_ds, eval_ds, processor); every manifest row has audio_path."""
     import datasets as hfds
     import librosa
     import numpy as np
@@ -25,30 +25,18 @@ def build_datasets(max_audio_s=30.0):
 
     processor = WhisperProcessor.from_pretrained(BASE_MODEL, language="english",
                                                  task="transcribe")
-    fleurs = hfds.load_from_disk(str(FLEURS_DIR))
-    idx = {}
-    for s in ("train", "validation", "test"):
-        for k, i in enumerate(fleurs[s]["id"]):
-            idx[(s, i)] = (s, k)
-
-    def get_audio(row):
-        if row.get("audio_path"):
-            wav, _ = librosa.load(row["audio_path"], sr=16000, mono=True)
-            return wav
-        s, k = idx[(row["fleurs_split"], row["fleurs_index"])]
-        return fleurs[s][k]["audio"]["array"].astype("float32")
 
     def featurize(rows):
         out = {"input_features": [], "labels": [], "source": []}
         for r in rows:
-            audio = get_audio(r)
-            if len(audio) > max_audio_s * 16000:
+            audio, _ = librosa.load(r["audio_path"], sr=16000, mono=True)
+            if len(audio) > max_audio_s * 16000 or len(audio) < 1600:
                 continue
             f = processor(audio, sampling_rate=16000).input_features[0]
             lab = processor.tokenizer(r["text"], truncation=True, max_length=224).input_ids
             out["input_features"].append(np.asarray(f, dtype=np.float32))
             out["labels"].append(lab)
-            out["source"].append(r["source"].split("_r")[0])
+            out["source"].append(r["source"])
         return out
 
     def gen(name):

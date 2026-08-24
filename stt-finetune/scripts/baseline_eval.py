@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import BASE_MODEL, MANIFEST_DIR, english_normalizer, read_manifest, wer  # noqa: E402
+from common import MANIFEST_DIR, english_normalizer, read_manifest, wer  # noqa: E402
 
 
 def load_rows():
@@ -22,19 +22,8 @@ def load_rows():
 
 def load_audio(row):
     import librosa
-    if row.get("audio_path"):
-        wav, _ = librosa.load(row["audio_path"], sr=16000, mono=True)
-        return wav
-    from datasets import load_from_disk
-    from common import FLEURS_DIR
-    if not hasattr(load_audio, "_ds"):
-        ds = load_from_disk(str(FLEURS_DIR))
-        load_audio._idx = {(s, i): k for s in ("validation", "test", "train")
-                           for k, i in enumerate(ds[s]["id"])}
-        load_audio._ds = ds
-    key = (row["fleurs_split"], row["fleurs_index"])
-    ex = load_audio._ds[load_audio._idx[key]]
-    return ex["audio"]["array"].astype("float32")
+    wav, _ = librosa.load(row["audio_path"], sr=16000, mono=True)
+    return wav
 
 
 def main():

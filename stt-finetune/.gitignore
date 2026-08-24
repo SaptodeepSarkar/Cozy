@@ -1,7 +1,9 @@
 .venv/
 .hf_cache/
 recordings/
-data/fleurs/
+data/cv_indian/
+data/nptel_indian/
+data/fleurs_raw/
 data/manifests/
 checkpoints/
 output/

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import BASE_MODEL, ROOT  # noqa: E402
 
 FLEURS_RAW = ROOT / "data" / "fleurs_raw" / "en_in"
-SPLITS = ["train", "validation", "test"]
+SPLITS = ["train", "dev", "test"]
 
 
 def download_model():
@@ -26,20 +26,30 @@ def download_model():
 def download_fleurs():
     from huggingface_hub import hf_hub_download
     FLEURS_RAW.mkdir(parents=True, exist_ok=True)
+    # audio archives land in FLEURS_RAW/<split>/ ; tsvs fetched separately
     for split in SPLITS:
         marker = FLEURS_RAW / f".{split}_done"
         if marker.exists():
             print(f"== FLEURS {split}: already extracted")
             continue
-        fname = f"audio/en_in~{split}.tar.gz"
+        fname = f"data/en_in/audio/{split}.tar.gz"
         print(f"== FLEURS en_in {split}: downloading {fname} ...")
         arch = hf_hub_download(repo_id="google/fleurs", repo_type="dataset",
                                filename=fname)
-        print(f"   extracting -> {FLEURS_RAW}")
+        out = FLEURS_RAW / split
+        out.mkdir(parents=True, exist_ok=True)
+        print(f"   extracting -> {out}")
         with tarfile.open(arch) as tf:
-            tf.extractall(FLEURS_RAW)
+            tf.extractall(out)
         marker.touch()
         Path(arch).unlink(missing_ok=True)  # save disk; re-downloadable
+    for split in SPLITS:
+        tsv_local = FLEURS_RAW / f"{split}.tsv"
+        if not tsv_local.exists():
+            p = hf_hub_download(repo_id="google/fleurs", repo_type="dataset",
+                                filename=f"data/en_in/{split}.tsv")
+            tsv_local.write_bytes(Path(p).read_bytes())
+            print(f"   {split}.tsv -> {tsv_local}")
 
 
 if __name__ == "__main__":

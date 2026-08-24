@@ -69,9 +69,23 @@ def countdown():
     print("   REC...", flush=True)
 
 
+def purge_partial_takes(out_dir, prefix):
+    """Drop truncated/corrupt takes left behind by a crashed session."""
+    for f in sorted(out_dir.glob(prefix + "_*.wav")):
+        try:
+            if f.stat().st_size < 4000:  # < ~0.25 s of 16-bit audio
+                f.unlink()
+                print("   removed incomplete take " + f.name)
+        except OSError:
+            pass
+
+
 def run_set(label, out_dir, prefix, total, seconds):
     out_dir.mkdir(parents=True, exist_ok=True)
+    purge_partial_takes(out_dir, prefix)
     i = next_index(out_dir, prefix)
+    if i > 1:
+        print("   resuming at take " + str(i))
     for n in range(1, total + 1):
         prompt = "[" + label + " " + str(n) + "/" + str(total) + "]"
         input(prompt + " press ENTER, then say it...")
@@ -108,6 +122,7 @@ def main():
         for word in words:
             prefix = "recording_" + slug(word)
             out_dir = HERE / "data" / "similar"
+            purge_partial_takes(out_dir, prefix)
             done = next_index(out_dir, prefix) - 1
             remaining = max(0, args.per_word - done)
             if remaining == 0:
