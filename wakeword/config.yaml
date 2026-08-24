@@ -21,6 +21,10 @@ similar_words:
   - rosy
   - nosy
   - noisy
+  - Josie
+  - Ozzie
+  - dozy
+  - posy
 
 audio:
   sample_rate: 16000
@@ -28,9 +32,15 @@ audio:
 
 counts:                  # used by generate_data.py --mode full
   positive: 6000         # synthetic "hey cozy" clips
+  extra_positive: 2500   # synthetic BARE "cozy" clips (wake works either way)
   similar_per_word: 800  # per similar word
   random_negative: 6000  # everyday speech that must never trigger
 seed_copy: 10            # demo clips copied into data/cozy and data/similar
+
+# Bare wake word: also train on plain "cozy" so a short call works too
+extra_positive_phrases:
+  - cozy
+  - cosy
 
 piper:
   multispeaker_generator: true  # use LibriTTS-R generator when downloaded

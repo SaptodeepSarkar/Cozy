@@ -11,6 +11,9 @@ if [[ ! -d .venv ]]; then
 fi
 source .venv/bin/activate
 
+echo "[run_all/$MODE] stripping silence from user recordings"
+python -u clean_recordings.py || true
+
 echo "[run_all/$MODE] step 1/3 - downloading models (best effort)"
 timeout 900 python -u download_models.py \
   || echo "[run_all/$MODE] WARN: some downloads incomplete - continuing with cached models"

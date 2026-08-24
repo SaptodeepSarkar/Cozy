@@ -14,8 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import DATA_DIR, MANIFEST_DIR, RECORDINGS_DIR  # noqa: E402
 
 random.seed(42)
-POOLS = ["cv_indian", "nptel_indian"]
-EVAL_TAKE = {"cv_indian": 120, "nptel_indian": 60}
+POOLS = ["cv_indian", "santhosh_indian"]
+EVAL_TAKE = {"cv_indian": 120, "santhosh_indian": 20}
 
 
 def load_pool(name):

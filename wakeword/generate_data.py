@@ -279,6 +279,21 @@ def main():
         copy_seeds(out, HERE / "data" / "cozy", "synth", int(t["seed_copy"]))
         print("  +" + str(t["seed_copy"]) + " seeds copied to data/cozy")
 
+    extra_phrases = list(CFG.get("extra_positive_phrases", []))
+    extra_target = int(CFG.get("counts", {}).get("extra_positive", 0))
+    if extra_phrases and extra_target > 0:
+        use_ms = multispeaker_ready() and not args.no_multispeaker
+        models = [MULTISPEAKER_PT] if use_ms else voices
+        ms = int(CFG["piper"]["max_speakers"]) if use_ms else None
+        out_bare = WORK / "synthetic_bare"
+        if args.force or cached_count(out_bare) < extra_target:
+            n = synth_bucket(extra_phrases, out_bare, "bare",
+                             extra_target, models, ms, batch_size, rng,
+                             fallback=voices)
+            print("[generate_data] bare positives wrote " + str(n))
+        else:
+            print("[generate_data] bare positives: cached")
+
     if "similar" in wanted:
         print("[generate_data] hard negatives: similar words x"
               + str(t["similar_per_word"]) + " each")

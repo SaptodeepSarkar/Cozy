@@ -44,6 +44,7 @@ CLIP = int(float(CFG["audio"]["clip_seconds"]) * SR)
 def collect_clips():
     positive = sorted((HERE / "data" / "cozy").glob("*.wav"))
     positive += sorted((WORK / "synthetic").glob("*.wav"))
+    positive += sorted((WORK / "synthetic_bare").glob("*.wav"))
     similar = sorted((HERE / "data" / "similar").glob("*.wav"))
     sim_root = WORK / "similar"
     if sim_root.exists():
@@ -423,6 +424,19 @@ def main():
 
     final = evaluate(model, vX, vy)
     suggested = sweep_threshold(vy.numpy(), final["probs"])
+
+    # precision-first operating point: the LOWEST threshold with ZERO
+    # false positives on every validation window (the user's top priority)
+    safe_t = None
+    for t in np.arange(0.30, 0.96, 0.01):
+        p = final["probs"] >= t
+        fpr_all = float(p[yv == 0].mean()) if (yv == 0).any() else 0.0
+        if fpr_all == 0.0:
+            safe_t = round(float(t), 2)
+        elif safe_t is not None:
+            break
+    if safe_t is None:
+        safe_t = 0.90
     sim_probs = final["probs"][n_pos_va:n_pos_va + n_sim_va]
     if len(sim_probs) > 0:
         sim_fpr = float((sim_probs >= 0.5).mean())
@@ -465,6 +479,7 @@ def main():
         "val_false_positive_rate_at_0.5": round(float(final["fpr"]), 4),
         "similar_words_false_alarm_rate": round(sim_fpr, 4),
         "suggested_threshold": suggested,
+        "safe_threshold_zero_fpr": safe_t,
         "trained_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     metrics_path = MODELS_DIR / "metrics.json"

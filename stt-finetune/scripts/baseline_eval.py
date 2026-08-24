@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import MANIFEST_DIR, english_normalizer, read_manifest, wer  # noqa: E402
+from common import BASE_MODEL, MANIFEST_DIR, english_normalizer, read_manifest, wer  # noqa: E402
 
 
 def load_rows():
