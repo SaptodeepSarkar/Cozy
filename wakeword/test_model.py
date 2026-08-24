@@ -87,7 +87,7 @@ def run_calibrate(seconds: float, model_path, threshold: float) -> None:
         bar = "#" * int(best * 40)
         print(format(t, "02d") + "s " + bar.ljust(40) + " "
               + format(best, ".3f")
-              + ("  <-- WAKE" if best >= threshold else "")))
+              + ("  <-- WAKE" if best >= threshold else ""))
 
 
 def run_mic(model, name: str, threshold: float, debug: bool = False) -> None:
