@@ -439,7 +439,7 @@ def sanity_check(onnx_path):
         from openwakeword.model import Model
         oww = Model(wakeword_models=[str(onnx_path)],
                     inference_framework="onnx")
-        wname = next(iter(oww.prediction_buffer.keys()))
+        wname = next(iter(oww.models.keys()))
         positive, similar, negative = collect_clips()
 
         def score(path):

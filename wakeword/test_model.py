@@ -30,7 +30,9 @@ def load_model(model_path: Path, threshold: float):
         )
     model = Model(wakeword_models=[str(model_path)],
                   inference_framework="onnx")
-    name = next(iter(model.prediction_buffer.keys()))
+    # openWakeWord 0.6: model names live on .models (prediction_buffer
+    # only fills after the first predict call)
+    name = next(iter(model.models.keys()))
     return model, name
 
 
