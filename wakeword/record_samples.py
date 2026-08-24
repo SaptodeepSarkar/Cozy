@@ -50,7 +50,14 @@ def record_clip(seconds):
     frames = int(seconds * SR)
     pcm = sd.rec(frames, samplerate=SR, channels=1, dtype="int16")
     sd.wait()
-    return trim_silence(pcm[:, 0])
+    clip = trim_silence(pcm[:, 0])
+    peak = int(np.abs(clip).max()) if len(clip) else 0
+    if peak > 32000:
+        print("   !! CLIPPING - lower your mic gain and retake this one")
+    elif peak < 700:
+        print("   !! TOO QUIET (peak " + str(peak) + ") - raise mic gain "
+              "or speak up, then retake")
+    return clip
 
 
 def slug(text):

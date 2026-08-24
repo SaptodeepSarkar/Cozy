@@ -1,1 +1,2 @@
 baseline_whisper-small	overall=11.93
+baseline_140row_evalset	overall=11.73

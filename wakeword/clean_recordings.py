@@ -49,6 +49,16 @@ def clean(pcm: np.ndarray) -> np.ndarray | None:
         if g1 - g0 > GAP_TRIM:
             keep[g0 + GAP_KEEP:g1] = False
     trimmed = body[keep]
+    # normalize to a healthy level (-3 dBFS target) so inconsistent mic
+    # gain can never produce whisper-quiet or clipped features again
+    peak = int(np.abs(trimmed).max()) if len(trimmed) else 0
+    if 0 < peak < 15000:
+        gain = min(22000 / peak, 8.0)
+        trimmed = (trimmed.astype(np.float32) * gain).clip(-32767, 32767)
+        trimmed = trimmed.astype(np.int16)
+    elif peak > 30000:
+        trimmed = (trimmed.astype(np.float32)
+                   * (28000.0 / peak)).clip(-32767, 32767).astype(np.int16)
     head = np.zeros(EDGE_KEEP, dtype=trimmed.dtype)
     tail = np.zeros(int(0.08 * SR), dtype=trimmed.dtype)
     return np.concatenate([head, trimmed, tail])
@@ -66,7 +76,14 @@ def main() -> None:
                 continue
             total += 1
             new = clean(pcm)
-            if new is None or abs(len(new) - len(pcm)) < int(0.02 * SR):
+            if new is None:
+                continue
+            orig_peak = int(np.abs(pcm).max()) if len(pcm) else 0
+            new_peak = int(np.abs(new).max()) if len(new) else 0
+            length_changed = abs(len(new) - len(pcm)) >= int(0.02 * SR)
+            level_bad = orig_peak < 8000 or orig_peak > 30000
+            if not length_changed and not level_bad and \
+                    abs(new_peak - orig_peak) < 500:
                 continue
             sf.write(str(wav), new.astype(np.int16), SR, subtype="PCM_16")
             changed += 1

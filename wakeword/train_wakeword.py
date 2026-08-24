@@ -412,6 +412,11 @@ def main():
                 "[train] model collapsed to always-negative (recall 0 at "
                 "epoch " + str(epoch) + ") - refusing to export junk; "
                 "needs better features/data")
+        if epoch >= 3 and metrics["fpr"] > 0.5 and metrics["recall"] > 0.95:
+            raise SystemExit(
+                "[train] model collapsed to always-positive (FPR "
+                + format(metrics["fpr"], ".2f") + " at epoch "
+                + str(epoch) + ") - lowering pos_weight recommended")
         score = avg_loss - metrics["auc"]
         if score < best_val:
             best_val = score
@@ -436,7 +441,8 @@ def main():
     safe_t = None
     for t in np.arange(0.30, 0.96, 0.01):
         p = final["probs"] >= t
-        fpr_all = float(p[yv == 0].mean()) if (yv == 0).any() else 0.0
+        fpr_all = float(p[vy.numpy() == 0].mean()) \
+            if (vy.numpy() == 0).any() else 0.0
         if fpr_all == 0.0:
             safe_t = round(float(t), 2)
         elif safe_t is not None:
