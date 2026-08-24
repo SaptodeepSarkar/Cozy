@@ -122,10 +122,11 @@ def main():
         print("  tell the agent: 'retrain cozy'")
     else:
         out_dir = args.out or (HERE / "data" / "cozy")
-        print("Recording " + str(args.num) + " clips of 'cozy' -> "
-              + str(out_dir.relative_to(HERE)))
+        phrase = str(cfg["wake_word"]["text"])
+        print("Recording " + str(args.num) + " clips of '" + phrase
+              + "' -> " + str(out_dir.relative_to(HERE)))
         print("Vary tone, speed and distance from the mic.\n")
-        run_set(label="'cozy'", out_dir=out_dir, prefix="recording",
+        run_set(label=phrase, out_dir=out_dir, prefix="recording",
                 total=args.num, seconds=args.seconds)
         print("\nDone! Retrain so the model learns your voice:")
         print("  tell the agent: 'retrain cozy'")

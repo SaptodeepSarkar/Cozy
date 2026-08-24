@@ -3,28 +3,31 @@
 # ---------------------------------------------------------------------------
 
 wake_word:
-  text: "cozy"
+  text: "hey cozy"
   # Alternate spellings nudge the TTS into varied pronunciations/accents
   # ("cosy" is simply the British spelling of cozy).
-  phonetic_variants: ["cozy", "cosy", "kozie", "cozy."]
+  phonetic_variants: ["hey cozy", "hey cosy", "hey kozie", "hey Cozy."]
 
 similar_words:
-  # Hard negatives: acoustically close to "cozy" but MUST NOT trigger.
-  - nosy
+  # Hard negatives: acoustically close to "hey cozy" but MUST NOT trigger.
+  # Phrase-matched lookalikes plus bare words that share the tail.
+  - hey rosy
+  - hey nosy
+  - hey Josie
+  - hey Ozzie
+  - hey dozy
+  - hey posy
+  - hey noisy
   - rosy
-  - Josie
-  - Ozzie
-  - dozy
-  - posy
+  - nosy
   - noisy
-  - cause he
 
 audio:
   sample_rate: 16000
   clip_seconds: 2.0
 
 counts:                  # used by generate_data.py --mode full
-  positive: 6000         # synthetic "cozy" clips
+  positive: 6000         # synthetic "hey cozy" clips
   similar_per_word: 800  # per similar word
   random_negative: 6000  # everyday speech that must never trigger
 seed_copy: 10            # demo clips copied into data/cozy and data/similar
