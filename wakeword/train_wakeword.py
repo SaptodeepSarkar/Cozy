@@ -54,6 +54,16 @@ def collect_clips():
     return positive, similar, negative
 
 
+def frame_energies(pcm16, frames):
+    """RMS energy per 80 ms block, aligned to embedding frames."""
+    usable = int(frames) * 1280
+    x = np.zeros(usable, dtype=np.float32)
+    n = min(len(pcm16), usable)
+    x[:n] = pcm16[:n].astype(np.float32)
+    blocks = x.reshape(int(frames), 1280)
+    return np.sqrt((blocks * blocks).mean(axis=1)) + 1e-6
+
+
 def augment(pcm, rng):
     gain_db = float(rng.uniform(-6.0, 6.0))
     x = pcm * (10.0 ** (gain_db / 20.0))
@@ -72,25 +82,28 @@ class FeatureExtractor:
         self.af = AudioFeatures()
         self.target = CLIP
 
-    def embeddings(self, pcm_f32):
-        """Extract features EXACTLY like deployment: feed 80 ms chunks
-        sequentially through one persistent AudioFeatures instance and read
-        its feature buffer - these are the very windows Model.predict scores
-        at inference time (frame i = last 16 buffer frames ending at chunk i).
-        """
+    def to_pcm16(self, pcm_f32):
         scaled = np.clip(np.round(pcm_f32 * 32767.0), -32768, 32767)
         pcm16 = scaled.astype(np.int16)
         x = pcm16[: self.target]
         if len(x) < self.target:
             pad = np.zeros(self.target - len(x), dtype=np.int16)
             x = np.concatenate([x, pad])
+        return x
+
+    def embeddings_pcm16(self, pcm16):
+        """Streaming-matched features for an exact-length int16 clip."""
         self.af.reset()
-        for i in range(0, len(x), 1280):
-            self.af(x[i:i + 1280])
+        for i in range(0, len(pcm16), 1280):
+            self.af(pcm16[i:i + 1280])
         emb = np.asarray(self.af.feature_buffer, dtype=np.float32)
         if emb.ndim != 2 or emb.shape[1] != EMB_DIM:
             raise RuntimeError("unexpected embedding shape " + str(emb.shape))
         return emb
+
+    def embeddings(self, pcm_f32):
+        """Extract features EXACTLY like deployment (streaming chunks)."""
+        return self.embeddings_pcm16(self.to_pcm16(pcm_f32))
 
 
 def windows_for_clip(emb, rng):
@@ -108,7 +121,7 @@ def windows_for_clip(emb, rng):
     picked = []
     for s in starts:
         picked.append(emb[s:s + W])
-    return np.stack(picked)
+    return np.stack(picked), starts
 
 
 def split_clips(clips, val_frac):
@@ -132,14 +145,31 @@ def embed_split(fe, clips, label, copies, rng, tag):
             pcm = pcm.mean(axis=1)
         if pcm.size < 1600:
             continue
+        base16 = fe.to_pcm16(pcm)
         for copy_i in range(copies):
-            x = pcm if copy_i == 0 else augment(pcm, rng)
+            if copy_i == 0:
+                x = pcm
+                x16 = base16
+            else:
+                x = augment(pcm, rng)
+                x16 = fe.to_pcm16(x)
             try:
-                emb = fe.embeddings(x)
+                emb = fe.embeddings_pcm16(x16)
             except Exception:
                 continue
-            wins = windows_for_clip(emb, rng).astype(np.float32)
-            xs.append(wins)
+            wins, starts = windows_for_clip(emb, rng)
+            if label == 1.0:
+                # only windows overlapping the actually-spoken part of the
+                # clip count as positive - padding/silence windows were
+                # poisoning the labels before
+                energies = frame_energies(x16, emb.shape[0])
+                voiced = energies >= max(energies.max() * 0.30, 50.0)
+                wmask = [bool(voiced[s:s + W].any()) for s in starts]
+                if any(wmask):
+                    keep = np.array(wmask)
+                    wins = wins[keep]
+                    starts = [s for s, k in zip(starts, wmask) if k]
+            xs.append(wins.astype(np.float32))
             ys.append(np.full(len(wins), label, dtype=np.float32))
         if (i + 1) % 500 == 0:
             print("  embedded " + tag + ": " + str(i + 1) + "/"
