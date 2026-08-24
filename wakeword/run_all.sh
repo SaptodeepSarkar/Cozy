@@ -22,7 +22,9 @@ echo "[run_all/$MODE] step 2/3 - generating training data"
 python -u generate_data.py --mode "$MODE"
 
 echo "[run_all/$MODE] step 3/3 - training + exporting the wake word model"
-python -u train_wakeword.py
+FAST_FLAG=""
+if [[ "${COZY_FAST_EMBED:-0}" == "1" ]]; then FAST_FLAG="--fast-embed"; fi
+python -u train_wakeword.py $FAST_FLAG
 
 echo ""
 echo "[run_all/$MODE] finished. Try it live:"

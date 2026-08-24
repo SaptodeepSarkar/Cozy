@@ -78,9 +78,12 @@ def augment(pcm, rng):
 class FeatureExtractor:
     """Wraps openWakeWord AudioFeatures (embed_clips API, v0.6+)."""
 
-    def __init__(self):
+    def __init__(self, device: str = "cpu"):
         from openwakeword.model import AudioFeatures
-        self.af = AudioFeatures()
+        try:
+            self.af = AudioFeatures(device=device)
+        except Exception:
+            self.af = AudioFeatures()
         self.target = CLIP
 
     def to_pcm16(self, pcm_f32):
@@ -347,13 +350,16 @@ def main():
                         choices=["auto", "cpu", "cuda"])
     parser.add_argument("--limit", type=int, default=0,
                         help="debug: cap clips per bucket")
+    parser.add_argument("--fast-embed", action="store_true",
+                        help="run feature extraction on the GPU "
+                             "(needs onnxruntime-gpu); big speedup")
     args = parser.parse_args()
 
     device = pick_device(args.device)
     print("[train] device=" + str(device))
 
     rng = np.random.default_rng(23)
-    fe = FeatureExtractor()
+    fe = FeatureExtractor(device=device if args.fast_embed else "cpu")
     built = build_dataset(fe, rng, limit=args.limit)
     tX, ty, vX, vy, n_pos_va, n_sim_va = built
 
