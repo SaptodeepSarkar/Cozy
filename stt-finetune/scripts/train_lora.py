@@ -88,10 +88,10 @@ def main():
     train_ds, eval_ds, processor = build_datasets()
     print(f"   train={len(train_ds)}  eval={len(eval_ds)}")
 
-    model = WhisperForConditionalGeneration.from_pretrained(
-        BASE_MODEL, torch_dtype=torch.float16)
+    model = WhisperForConditionalGeneration.from_pretrained(BASE_MODEL)
     model.config.forced_decoder_ids = None
     model.config.suppress_tokens = []
+    model.config.use_cache = False  # required with gradient checkpointing
 
     lora = LoraConfig(r=args.lora_r, lora_alpha=args.lora_r * 2,
                       target_modules=["q_proj", "v_proj"],
@@ -100,6 +100,7 @@ def main():
     model.print_trainable_parameters()
 
     norm = english_normalizer()
+    eval_sources = eval_ds["source"]  # aligned with eval prediction order
 
     def compute_metrics(pred):
         tok = processor.tokenizer
@@ -110,9 +111,18 @@ def main():
         label_ids[label_ids == -100] = tok.pad_token_id
         pred_str = tok.batch_decode(pred_ids, skip_special_tokens=True)
         label_str = tok.batch_decode(label_ids, skip_special_tokens=True)
+        refs_n = [norm(l) for l in label_str]
+        hyps_n = [norm(p) for p in pred_str]
         from common import wer as _wer
-        w = _wer([norm(p) for p in pred_str], [norm(l) for l in label_str])
-        return {"wer": w}
+        metrics = {"wer": _wer(hyps_n, refs_n)}
+        # per-source: guard against overfitting to YOUR voice at others' cost
+        for name, sel in (("user", lambda s: s == "user"),
+                          ("corpus", lambda s: s != "user")):
+            r = [x for x, s in zip(refs_n, eval_sources) if sel(s)]
+            h = [x for x, s in zip(hyps_n, eval_sources) if sel(s)]
+            if r:
+                metrics[f"wer_{name}"] = _wer(h, r)
+        return metrics
 
     targs = Seq2SeqTrainingArguments(
         output_dir=args.out,
@@ -124,7 +134,7 @@ def main():
         learning_rate=args.lr,
         lr_scheduler_type="linear",
         warmup_steps=40,
-        fp16=True,
+        bf16=True,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         eval_strategy="steps" if args.max_steps < 0 else "no",
@@ -137,7 +147,7 @@ def main():
         greater_is_better=False,
         predict_with_generate=True,
         generation_max_length=224,
-        logging_steps=10,
+        logging_steps=1,
         remove_unused_columns=False,
         dataloader_num_workers=2,
         report_to=[],

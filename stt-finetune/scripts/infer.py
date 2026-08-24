@@ -39,8 +39,11 @@ def main():
 
     if CT2.exists():
         from faster_whisper import WhisperModel
-        print(f"[model: {CT2.name}]")
-        model = WhisperModel(str(CT2), device="cuda", compute_type="int8_float16")
+        import torch
+        assert torch.cuda.is_available(), "dGPU required: CUDA device not found"
+        print(f"[model: {CT2.name} on {torch.cuda.get_device_name(0)}]")
+        model = WhisperModel(str(CT2), device="cuda", device_index=0,
+                             compute_type="int8_float16")
         segments, info = model.transcribe(wav, language="en", beam_size=args.beam,
                                           vad_filter=True)
         text = " ".join(s.text.strip() for s in segments).strip()

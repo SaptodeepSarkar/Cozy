@@ -132,6 +132,28 @@
         "Let me spell it: S-A-P-T-O-D-E-E-P.",
         "Alright, that's a wrap for this session."
       ]
+    },
+    {
+      "id": 7,
+      "name": "hinglish",
+      "title": "Hinglish (romanised Hindi-English mix \u2014 speak naturally)",
+      "lines": [
+        "Cozy, aaj ka weather kaisa hai?",
+        "Ek minute yaar, hold on.",
+        "Accha, so what's the plan for tomorrow?",
+        "Koi nahi, next time try kar lena.",
+        "Mujhe lagta hai meeting cancel ho gayi.",
+        "Cozy, thoda volume badha do please.",
+        "Ye file delete karo, but recycle bin mein daalna.",
+        "Arre wah, that's great news!",
+        "Chalo, order some biryani tonight.",
+        "Cozy, mera schedule check karo na.",
+        "Hmm, theek hai, five more minutes.",
+        "Yaar, yeh internet phir se slow ho gaya.",
+        "Reminder set karo: papa ko call karna hai.",
+        "Arey nahi nahi, woh galti se ho gaya.",
+        "Cozy, lights off karo and good night bol do."
+      ]
     }
   ]
 }

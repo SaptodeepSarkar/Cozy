@@ -17,6 +17,7 @@ import array
 import json
 import math
 import os
+import select
 import subprocess
 import sys
 import wave
@@ -52,8 +53,14 @@ def record_take(threshold=RMS_SIL) -> tuple[Path | None, float]:
     peak = 0
     silent_tail = 0.0
     chunk_n = SR // 10  # 100 ms
+    elapsed = 0.0
+    print("    [recording] press ENTER to stop, or wait for silence...", end="", flush=True)
     try:
         while True:
+            # manual stop: any Enter pressed mid-recording ends the take
+            r, _, _ = select.select([sys.stdin], [], [], 0)
+            if r and sys.stdin.read(1) == "\n":
+                break
             raw = proc.stdout.read(chunk_n * 2)
             if not raw:
                 break
@@ -65,6 +72,10 @@ def record_take(threshold=RMS_SIL) -> tuple[Path | None, float]:
             rms = math.sqrt(sum((s * s) for s in samples[::4]) / max(1, n // 4))
             peak = max(peak, rms)
             frames.append(samples.tobytes())
+            elapsed += 0.1
+            if int(elapsed * 10) % 10 == 0:
+                print(f"\r    [recording {elapsed:0.0f}s] ENTER=stop / silence stops it ",
+                      end="", flush=True)
             if rms < threshold:
                 silent_tail += 0.10
                 if len(frames) > 5 and silent_tail >= SILENCE_SEC:
@@ -75,6 +86,7 @@ def record_take(threshold=RMS_SIL) -> tuple[Path | None, float]:
             if total >= MAX_SEC:
                 break
     finally:
+        print("\r" + " " * 70 + "\r", end="", flush=True)
         proc.terminate()
         try:
             proc.wait(timeout=2)
@@ -131,6 +143,7 @@ def mic_check():
 def run_session(sess: dict, threshold):
     sid = sess["id"]
     sdir = REC_DIR / f"session_{sid}"
+    sdir.mkdir(parents=True, exist_ok=True)  # exists before first os.replace
     st = load_progress(sdir)
     lines = sess["lines"]
     todo = [i for i in range(len(lines))
@@ -145,7 +158,7 @@ def run_session(sess: dict, threshold):
     for idx in todo:
         text = lines[idx]
         print(f"\n[{idx + 1}/{len(lines)}]  >>> {text}")
-        print("    ...recording starts NOW (stops ~1s after you finish)")
+        print("    Speak now — press ENTER when you finish (or it auto-stops on silence)")
         take, peak = record_take(threshold)
         dur = wave.open(str(take)).getnframes() / SR
         if peak < RMS_SIL or dur < 0.3:

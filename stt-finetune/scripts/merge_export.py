@@ -44,8 +44,11 @@ def main():
     print(f"   CT2 model -> {args.ct2_out}")
 
     # sanity check with faster-whisper on any available clip
+    import torch
+    assert torch.cuda.is_available(), "dGPU required: CUDA device not found"
     from faster_whisper import WhisperModel
-    m = WhisperModel(args.ct2_out, device="cuda", compute_type="int8_float16")
+    m = WhisperModel(args.ct2_out, device="cuda", device_index=0,
+                     compute_type="int8_float16")
     probe = next(Path("recordings").rglob("*.wav"), None)
     if probe:
         segs, _ = m.transcribe(str(probe), language="en", beam_size=1)
