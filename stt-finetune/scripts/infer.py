@@ -37,33 +37,56 @@ def main():
         sys.exit("Give --wav PATH or --mic SECONDS")
     wav = str(wav)
 
-    if CT2.exists():
-        from faster_whisper import WhisperModel
-        import torch
-        assert torch.cuda.is_available(), "dGPU required: CUDA device not found"
-        print(f"[model: {CT2.name} on {torch.cuda.get_device_name(0)}]")
-        model = WhisperModel(str(CT2), device="cuda", device_index=0,
-                             compute_type="int8_float16")
-        segments, info = model.transcribe(wav, language="en", beam_size=args.beam,
-                                          vad_filter=True)
-        text = " ".join(s.text.strip() for s in segments).strip()
-    elif HF.exists():
-        import librosa
-        import torch
-        from transformers import WhisperForConditionalGeneration, WhisperProcessor
-        print("[model: hf_finetuned]")
-        proc = WhisperProcessor.from_pretrained(str(HF))
-        model = WhisperForConditionalGeneration.from_pretrained(
-            str(HF), torch_dtype=torch.float16).to("cuda")
-        audio, _ = librosa.load(wav, sr=16000, mono=True)
-        feats = proc(audio, sampling_rate=16000, return_tensors="pt").to("cuda", torch.float16)
-        ids = model.generate(feats.input_features, language="english",
-                             task="transcribe", max_new_tokens=224)
-        text = proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
-    else:
-        sys.exit(f"No finetuned model found. Run training + merge_export first.\n"
-                 f"(looked in {CT2} and {HF})")
+def transcribe_ct2(wav, beam):
+    from faster_whisper import WhisperModel
+    import torch
+    assert torch.cuda.is_available(), "dGPU required: CUDA device not found"
+    model = WhisperModel(str(CT2), device="cuda", device_index=0,
+                         compute_type="int8_float16")
+    segments, _ = model.transcribe(wav, language="en", beam_size=beam,
+                                   vad_filter=True)
+    return " ".join(s.text.strip() for s in segments).strip()
 
+
+def transcribe_hf(wav):
+    import librosa
+    import torch
+    from transformers import WhisperForConditionalGeneration, WhisperProcessor
+    proc = WhisperProcessor.from_pretrained(str(HF))
+    model = WhisperForConditionalGeneration.from_pretrained(
+        str(HF), torch_dtype=torch.float16).to("cuda")
+    audio, _ = librosa.load(wav, sr=16000, mono=True)
+    feats = proc(audio, sampling_rate=16000, return_tensors="pt").to("cuda", torch.float16)
+    ids = model.generate(feats.input_features, language="english",
+                         task="transcribe", max_new_tokens=224)
+    return proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--wav")
+    ap.add_argument("--mic", type=int, default=0, help="record N seconds from mic")
+    ap.add_argument("--beam", type=int, default=1)
+    ap.add_argument("--engine", choices=["auto", "ct2", "hf"], default="auto")
+    args = ap.parse_args()
+
+    wav = args.wav or (transcribe_mic(args.mic) if args.mic else None)
+    if not wav:
+        sys.exit("Give --wav PATH or --mic SECONDS")
+    wav = str(wav)
+
+    text, engine = "", None
+    if args.engine in ("auto", "ct2") and CT2.exists():
+        text, engine = transcribe_ct2(wav, args.beam), f"ct2:{CT2.name}"
+        if not text:   # known CT2 edge case with some merged weights -> fallback
+            print("[ct2 empty, falling back to hf]", file=sys.stderr)
+            text, engine = None, None
+    if not text and HF.exists():
+        text, engine = transcribe_hf(wav), "hf_finetuned"
+    if not text:
+        sys.exit(f"No working finetuned model. Looked in {CT2} and {HF}.")
+
+    print(f"[model: {engine}]")
     print(text)
 
 
