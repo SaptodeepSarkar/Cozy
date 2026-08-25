@@ -167,7 +167,8 @@ def embed_split(fe, clips, label, copies, rng, tag):
                 # clip count as positive - padding/silence windows were
                 # poisoning the labels before
                 energies = frame_energies(x16, emb.shape[0])
-                voiced = energies >= max(energies.max() * 0.30, 50.0)
+                noise_floor = float(np.median(energies))
+                voiced = energies >= max(noise_floor * 3.5, 60.0)
                 wmask = [bool(voiced[s:s + W].any()) for s in starts]
                 if any(wmask):
                     keep = np.array(wmask)
@@ -203,6 +204,9 @@ def build_dataset(fe, rng, limit=0):
     val_frac = float(TR["val_fraction"])
 
     pos_tr, pos_va = split_clips(positive, val_frac)
+    # emphasize the deployment microphone: repeat user's real takes x3
+    user_real_tr = [c for c in pos_tr if "synth" not in c.name]
+    pos_tr = pos_tr + user_real_tr * 2
     sim_tr, sim_va = split_clips(similar, val_frac)
     neg_tr, neg_va = split_clips(negative, val_frac)
 
@@ -371,7 +375,7 @@ def main():
                                                        T_max=args.epochs)
     n_pos = int(ty.sum().item())
     n_neg = int(len(ty) - n_pos)
-    pos_weight_value = max(1.0, n_neg / max(1, n_pos))
+    pos_weight_value = 1.0  # neutral; operating point chosen by threshold sweep
     loss_fn = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor([pos_weight_value],
                                 dtype=torch.float32,

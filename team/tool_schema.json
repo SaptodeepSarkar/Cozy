@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "phrase_variants": [
+    "hey cozy",
+    "cozy"
+  ],
+  "tools": [
+    {
+      "name": "system.volume.set",
+      "params": {
+        "level": "int 0-100"
+      },
+      "desc": "Set master volume"
+    },
+    {
+      "name": "system.volume.mute",
+      "params": {},
+      "desc": "Mute/unmute toggle"
+    },
+    {
+      "name": "system.brightness.set",
+      "params": {
+        "level": "int 0-100"
+      },
+      "desc": "Set screen brightness"
+    },
+    {
+      "name": "app.open",
+      "params": {
+        "name": "string"
+      },
+      "desc": "Launch app by name (browser, terminal, spotify, files, calculator, settings...)"
+    },
+    {
+      "name": "app.close",
+      "params": {
+        "name": "string"
+      },
+      "desc": "Close app window"
+    },
+    {
+      "name": "screenshot.take",
+      "params": {},
+      "desc": "Capture screen"
+    },
+    {
+      "name": "media.play",
+      "params": {}
+    },
+    {
+      "name": "media.pause",
+      "params": {}
+    },
+    {
+      "name": "media.next",
+      "params": {}
+    },
+    {
+      "name": "media.previous",
+      "params": {}
+    },
+    {
+      "name": "window.minimize_all",
+      "params": {}
+    },
+    {
+      "name": "settings.open",
+      "params": {
+        "page": "string e.g. wifi, bluetooth, display, sound"
+      }
+    },
+    {
+      "name": "browser.search",
+      "params": {
+        "query": "string"
+      },
+      "desc": "Web search in default browser"
+    },
+    {
+      "name": "browser.open_url",
+      "params": {
+        "url": "string"
+      }
+    },
+    {
+      "name": "time.now",
+      "params": {},
+      "desc": "Speak current time/date"
+    },
+    {
+      "name": "none",
+      "params": {},
+      "desc": "Normal conversation - no tool call"
+    }
+  ],
+  "notes": "Router maps STT text -> LLM (Qwen3-0.6B fine-tune); LLM emits {tool, params} JSON or none. Hinglish variants welcome in training data."
+}
