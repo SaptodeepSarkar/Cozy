@@ -1,207 +1,28 @@
-{
-  "sessions": [
-    {
-      "id": 1,
-      "name": "assistant_commands",
-      "title": "Everyday assistant commands (speak naturally, as if talking to Cozy)",
-      "lines": [
-        "Hey Cozy, what time is it right now?",
-        "Cozy, what's the weather like in Kolkata today?",
-        "Set a timer for ten minutes.",
-        "Remind me to call the bank tomorrow at eleven.",
-        "Play some soft music in the background.",
-        "What's on my calendar for this week?",
-        "Open the terminal and run the tests.",
-        "Turn down the volume a little.",
-        "Add milk, bread and eggs to my shopping list.",
-        "Cozy, take a note: submit the project report by Friday.",
-        "Search for the nearest coffee shop.",
-        "What is the temperature outside right now?",
-        "Stop the music after this song.",
-        "Wake up cozy, we have work to do.",
-        "Goodnight cozy, shut everything down."
-      ]
-    },
-    {
-      "id": 2,
-      "name": "indian_context",
-      "title": "Indian names, cities and everyday words",
-      "lines": [
-        "I need to catch the metro from Salt Lake to Howrah station.",
-        "Book a cab to Netaji Subhas Chandra Bose International Airport.",
-        "My friend Abhishek lives near Jayanagar in Bengaluru.",
-        "Let's order biryani from that place near Park Street.",
-        "The train from Howrah to Delhi Rajdhani leaves at four thirty.",
-        "Send a message to Priya about tomorrow's meeting.",
-        "I prefer filter coffee over masala chai in the morning.",
-        "The GST invoice for last month hasn't arrived yet.",
-        "We celebrated Diwali at my cousin's flat in Andheri West.",
-        "Is the Vande Bharat express faster than the Shatabdi?",
-        "My PAN card and Aadhaar are in the top drawer.",
-        "Traffic on the Eastern Metropolitan Bypass is terrible today.",
-        "She works at an IT park in Hinjewadi, Pune.",
-        "Let's watch the match at Eden Gardens this Sunday.",
-        "Please recharge my phone with the two ninety nine plan."
-      ]
-    },
-    {
-      "id": 3,
-      "name": "numbers_dates_tech",
-      "title": "Numbers, dates, times and technical words",
-      "lines": [
-        "The meeting got moved from 3:15 PM to 4:45 PM.",
-        "My laptop has 16 gigabytes of RAM and a solid state drive.",
-        "Call me on 98300 twelve three four five.",
-        "The invoice total came to rupees forty two thousand five hundred.",
-        "Python version three point one two is installed on this machine.",
-        "Deploy the build to production on Monday, the twenty third of August.",
-        "The Wi-Fi password is cozy dash local dash two zero two six.",
-        "I reached eighty percent accuracy on the validation set.",
-        "Download speed is around fifty megabits per second.",
-        "Set an alarm for six o'clock in the morning.",
-        "The file is exactly one point four gigabytes.",
-        "Train the model for three epochs with batch size eight.",
-        "Pin code seven thousand zero nine one.",
-        "He was born on January the fifth, nineteen ninety eight.",
-        "Reduce the learning rate to zero point zero zero zero one."
-      ]
-    },
-    {
-      "id": 4,
-      "name": "general_prose",
-      "title": "Natural prose (read clearly, like narrating)",
-      "lines": [
-        "The monsoon arrived early this year, bringing relief from the summer heat.",
-        "Reading a few pages before bed helps me sleep better than scrolling on my phone.",
-        "The committee will review all applications before announcing the final list.",
-        "A balanced diet and regular exercise matter more than any supplement.",
-        "The library stays open until eight in the evening on weekdays.",
-        "Our team finished the sprint backlog two days ahead of schedule.",
-        "Learning to cook simple meals saves both money and time.",
-        "The museum has a wonderful collection of miniature paintings.",
-        "Cycling to work keeps me active and clears my head before meetings.",
-        "The documentary explained how coral reefs survive in warm waters.",
-        "Every Sunday, we visit the market to buy fresh vegetables.",
-        "The new policy allows employees to work remotely twice a week.",
-        "His presentation on renewable energy impressed the entire panel.",
-        "Rain water harvesting should be compulsory in every apartment complex.",
-        "The old bookshop near the college still sells second hand novels for fifty rupees."
-      ]
-    },
-    {
-      "id": 5,
-      "name": "hard_cases",
-      "title": "Hard cases: short, long, punctuation-heavy",
-      "lines": [
-        "Yes.",
-        "No, wait.",
-        "Okay, done!",
-        "Hmm, let me think about it.",
-        "Sorry, could you repeat that?",
-        "Wait, stop, cancel that!",
-        "One more time, slower please.",
-        "What?! Are you serious?",
-        "Hi cozy, good morning!",
-        "Thanks, that's all for now.",
-        "E-mail me the report at saptodeep dot dev at gmail dot com.",
-        "It's Dr. Sharma's appointment at St. John's hospital, Room no. 204.",
-        "\"Quote me the price,\" he said, \"including GST and delivery.\"",
-        "The recipe needs 250g flour, 2 eggs, 1 tsp baking powder, and a pinch of salt.",
-        "Cozy, remind me: mom's birthday gift, dad's medicines, and my passport renewal."
-      ]
-    },
-    {
-      "id": 6,
-      "name": "spontaneous_style",
-      "title": "Conversational style (speak casually, like really chatting)",
-      "lines": [
-        "Arre cozy, why did you mute yourself again?",
-        "I don't know yaar, maybe we should just order in tonight.",
-        "Actually wait, cancel my previous instruction.",
-        "You know what, just play something chill.",
-        "Bas, that's enough work for today.",
-        "Could you kindly repeat the last part?",
-        "I'll be home by eight-ish, start the geyser at seven forty five.",
-        "Tell me honestly, does this accent confuse you?",
-        "One second, someone's at the door.",
-        "Okay listen carefully, this is important: back up the projects folder first.",
-        "Thoda loud please, I can't hear you properly.",
-        "Great job cozy, you're getting better at this.",
-        "Ugh, the internet is crawling again today.",
-        "Let me spell it: S-A-P-T-O-D-E-E-P.",
-        "Alright, that's a wrap for this session."
-      ]
-    },
-    {
-      "id": 7,
-      "name": "hinglish",
-      "title": "Hinglish (romanised Hindi-English mix \u2014 speak naturally)",
-      "lines": [
-        "Cozy, aaj ka weather kaisa hai?",
-        "Ek minute yaar, hold on.",
-        "Accha, so what's the plan for tomorrow?",
-        "Koi nahi, next time try kar lena.",
-        "Mujhe lagta hai meeting cancel ho gayi.",
-        "Cozy, thoda volume badha do please.",
-        "Ye file delete karo, but recycle bin mein daalna.",
-        "Arre wah, that's great news!",
-        "Chalo, order some biryani tonight.",
-        "Cozy, mera schedule check karo na.",
-        "Hmm, theek hai, five more minutes.",
-        "Yaar, yeh internet phir se slow ho gaya.",
-        "Reminder set karo: papa ko call karna hai.",
-        "Arey nahi nahi, woh galti se ho gaya.",
-        "Cozy, lights off karo and good night bol do."
-      ]
-    },
-    {
-      "id": 8,
-      "name": "pure_hindi_romanized",
-      "title": "PURE Hindi speech (we will train romanized output \u2014 speak naturally in Hindi)",
-      "lines": [
-        "Mujhe bhookh lag rahi hai, kuch order karte hain.",
-        "Bahut garmi hai aaj, AC chala do please.",
-        "Kal subah jaldi uthna hai, alarm laga do.",
-        "Yeh kaam abhi baad mein karenge, pehle chai piyo.",
-        "Mera phone kahan hai, dhundo zara.",
-        "Station pahunchne mein kitna time lagega?",
-        "Aaj ka din bahut achha tha, shukriya cozy.",
-        "Thoda ruk jao, main abhi aata hoon.",
-        "Barish ho rahi hai, chhata le jao.",
-        "Mummy ko bol do main ghar aa raha hoon.",
-        "Yeh movie bahut boring thi, band karo.",
-        "Subah walk ke liye paanch baje utha dena."
-      ],
-      "manual_only": true
-    },
-    {
-      "id": 9,
-      "name": "hinglish_tech_v2",
-      "title": "Hinglish \u00d7 Tech (dev words, apps, travel \u2014 fixes GitHub/push/hoon errors)",
-      "lines": [
-        "Cozy, mera code GitHub pe push kar de.",
-        "Ye branch delete karo aur naya commit banao.",
-        "Terminal kholo aur tests run karo please.",
-        "Mujhe Stack Overflow pe ye error search karne hai.",
-        "VS Code mein projects folder open kar do.",
-        "Ek PR merge karna hai, review ke baad.",
-        "Laptop ka brightness thoda kam karo yaar.",
-        "Alarm laga do subah paanch bayees minute ka.",
-        "Mujhe kal Bangalore jaana hai, flight book karo.",
-        "Karnataka express kitne baje nikalti hai?",
-        "Cozy, ek reminder set kar \u2014 pandrahe minute mein break.",
-        "Server pe deploy karna hai shaam ko, yaad rakhna.",
-        "Mera hoon wala feel aa nahi raha, tum bolo kaisa lag raha hai?",
-        "GPU load zyada hai, training chal rahi hai background mein.",
-        "Sab kuch backup ho gaya na? Achha suno, good night cozy."
-      ]
-    },
-    {
-      "id": 10,
-      "name": "alarms",
-      "title": "Alarms, timers, reminders",
-      "manual_only": false,
-      "lines": [
+#!/usr/bin/env python3
+"""
+Regenerate data/prompts.json from a structured category dictionary.
+
+Each session = 15 sentences that *use* a vocabulary class (not just a
+word list). The same English prompt often appears with a Hinglish twin
+so the model learns to code-switch on demand.
+
+Usage:
+    python3 scripts/build_prompts.py           # merge (keep existing 1-9)
+    python3 scripts/build_prompts.py --replace  # drop existing 10+, regenerate
+    python3 scripts/build_prompts.py --per-session 18   # more lines/session
+"""
+import argparse
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PROMPTS = ROOT / "data" / "prompts.json"
+
+# -------------------------------------------------------------- categories
+# every entry: (id, name, title, lines, manual_only?)
+SESSIONS = [
+    # ---------------- everyday commands (short, snappy English) ------
+    (10, "alarms", "Alarms, timers, reminders", [
         "Set an alarm for six thirty in the morning.",
         "Set a timer for fifteen minutes.",
         "Remind me to call mom at eight PM.",
@@ -216,15 +37,9 @@
         "Wake me up gently at sunrise tomorrow.",
         "Set a countdown for ninety seconds.",
         "Cancel all my reminders for today.",
-        "Add a daily reminder to drink water."
-      ]
-    },
-    {
-      "id": 11,
-      "name": "apps_open",
-      "title": "Open apps and launch programs",
-      "manual_only": false,
-      "lines": [
+        "Add a daily reminder to drink water.",
+    ], False),
+    (11, "apps_open", "Open apps and launch programs", [
         "Open Spotify.",
         "Launch Visual Studio Code.",
         "Open the terminal please.",
@@ -239,15 +54,9 @@
         "Start the music player.",
         "Open the photo gallery.",
         "Launch the calendar app.",
-        "Open the system monitor."
-      ]
-    },
-    {
-      "id": 12,
-      "name": "web_search",
-      "title": "Web search and quick lookups",
-      "manual_only": false,
-      "lines": [
+        "Open the system monitor.",
+    ], False),
+    (12, "web_search", "Web search and quick lookups", [
         "Search for the best biryani near me.",
         "Look up the weather in Bangalore tomorrow.",
         "Find a recipe for paneer butter masala.",
@@ -262,15 +71,9 @@
         "Find a yoga class near me.",
         "Search for the best laptop under fifty thousand.",
         "Look up the distance between Delhi and Jaipur.",
-        "Find the latest news on Chandrayaan."
-      ]
-    },
-    {
-      "id": 13,
-      "name": "media_control",
-      "title": "Music, video and media control",
-      "manual_only": false,
-      "lines": [
+        "Find the latest news on Chandrayaan.",
+    ], False),
+    (13, "media_control", "Music, video and media control", [
         "Play the next track.",
         "Pause the music.",
         "Resume playback.",
@@ -285,15 +88,9 @@
         "Stop the video.",
         "Full screen the video please.",
         "Rewind thirty seconds.",
-        "Fast forward to the end."
-      ]
-    },
-    {
-      "id": 14,
-      "name": "system_settings",
-      "title": "System settings: brightness, wifi, bluetooth",
-      "manual_only": false,
-      "lines": [
+        "Fast forward to the end.",
+    ], False),
+    (14, "system_settings", "System settings: brightness, wifi, bluetooth", [
         "Turn on Wi-Fi.",
         "Disable Bluetooth.",
         "Set brightness to maximum.",
@@ -308,15 +105,9 @@
         "Sign out and switch user.",
         "Turn off the touchpad.",
         "Enable night light.",
-        "Open the sound settings."
-      ]
-    },
-    {
-      "id": 15,
-      "name": "navigation",
-      "title": "Navigation, directions and travel",
-      "manual_only": false,
-      "lines": [
+        "Open the sound settings.",
+    ], False),
+    (15, "navigation", "Navigation, directions and travel", [
         "Take me home.",
         "Navigate to the airport.",
         "How long will it take to reach the office?",
@@ -331,15 +122,9 @@
         "Find a parking spot near the mall.",
         "Take me to the nearest ATM.",
         "Drive me to Connaught Place.",
-        "Show me public transport options."
-      ]
-    },
-    {
-      "id": 16,
-      "name": "calendar_meetings",
-      "title": "Calendar, meetings and scheduling",
-      "manual_only": false,
-      "lines": [
+        "Show me public transport options.",
+    ], False),
+    (16, "calendar_meetings", "Calendar, meetings and scheduling", [
         "Schedule a meeting with Rohit at three PM tomorrow.",
         "What's on my calendar today?",
         "Move the stand-up to four PM.",
@@ -354,15 +139,11 @@
         "When is my next free slot today?",
         "Move all my meetings by one hour tomorrow.",
         "Set the location of the stand-up to Zoom.",
-        "Add a fifteen minute buffer between meetings."
-      ]
-    },
-    {
-      "id": 17,
-      "name": "daily_objects",
-      "title": "Daily objects in natural sentences",
-      "manual_only": false,
-      "lines": [
+        "Add a fifteen minute buffer between meetings.",
+    ], False),
+
+    # ---------------- daily words in natural sentences --------------
+    (17, "daily_objects", "Daily objects in natural sentences", [
         "Pass me the glass of water please.",
         "I can't find my wallet anywhere.",
         "The remote is on the sofa.",
@@ -377,15 +158,9 @@
         "I need a spoon for the soup.",
         "The blanket is in the cupboard.",
         "I left my watch in the bathroom.",
-        "Can you grab me a pen?"
-      ]
-    },
-    {
-      "id": 18,
-      "name": "family_relations",
-      "title": "Family relations and people",
-      "manual_only": false,
-      "lines": [
+        "Can you grab me a pen?",
+    ], False),
+    (18, "family_relations", "Family relations and people", [
         "Call my sister on her mobile.",
         "Send a message to my dad.",
         "Tell mom I'll be late tonight.",
@@ -400,15 +175,11 @@
         "Forward the email to my father-in-law.",
         "Group call my parents and in-laws.",
         "Drop a text to my best friend.",
-        "Wish my colleague a happy anniversary."
-      ]
-    },
-    {
-      "id": 19,
-      "name": "complex_english_prog",
-      "title": "Complex English: programming terms",
-      "manual_only": false,
-      "lines": [
+        "Wish my colleague a happy anniversary.",
+    ], False),
+
+    # ---------------- complex English (technical / advanced) -------
+    (19, "complex_english_prog", "Complex English: programming terms", [
         "The function uses a recursive descent parser.",
         "I need to debug this memory leak in production.",
         "The compiler is throwing a segmentation fault.",
@@ -423,15 +194,9 @@
         "Enable distributed tracing for the microservices.",
         "Compress the payload using gzip before transit.",
         "Implement rate limiting on the public API.",
-        "Migrate the legacy monolith to event driven architecture."
-      ]
-    },
-    {
-      "id": 20,
-      "name": "complex_english_ai",
-      "title": "Complex English: AI / ML terms",
-      "manual_only": false,
-      "lines": [
+        "Migrate the legacy monolith to event driven architecture.",
+    ], False),
+    (20, "complex_english_ai", "Complex English: AI / ML terms", [
         "Fine tune the model on the personal voice dataset.",
         "The transformer uses multi-head self attention.",
         "I need to quantize the weights to int eight for inference.",
@@ -446,15 +211,9 @@
         "Distil the large model into a smaller student.",
         "Use RLHF to align the assistant with user intent.",
         "Compute the word error rate on the test set.",
-        "Deploy the model behind a Triton inference server."
-      ]
-    },
-    {
-      "id": 21,
-      "name": "complex_english_science",
-      "title": "Complex English: science and medicine",
-      "manual_only": false,
-      "lines": [
+        "Deploy the model behind a Triton inference server.",
+    ], False),
+    (21, "complex_english_science", "Complex English: science and medicine", [
         "The patient presents with acute appendicitis.",
         "Run a complete blood count immediately.",
         "The lab results show elevated creatinine levels.",
@@ -469,15 +228,9 @@
         "Newton's third law states that every action has an equal and opposite reaction.",
         "The patient needs a coronary artery bypass graft.",
         "Check the liver function test before discharge.",
-        "Recommend a high protein diet for recovery."
-      ]
-    },
-    {
-      "id": 22,
-      "name": "complex_english_finance",
-      "title": "Complex English: finance and business",
-      "manual_only": false,
-      "lines": [
+        "Recommend a high protein diet for recovery.",
+    ], False),
+    (22, "complex_english_finance", "Complex English: finance and business", [
         "Diversify the portfolio across asset classes.",
         "The inflation rate is at a five year high.",
         "Calculate the compound interest on this principal.",
@@ -492,15 +245,11 @@
         "The mutual fund outperformed its benchmark by three percent.",
         "Allocate sixty percent to equities and forty to bonds.",
         "Set up a SIP of five thousand rupees per month.",
-        "The depreciation schedule needs to be recalculated."
-      ]
-    },
-    {
-      "id": 23,
-      "name": "companies_tech",
-      "title": "Tech company names",
-      "manual_only": false,
-      "lines": [
+        "The depreciation schedule needs to be recalculated.",
+    ], False),
+
+    # ---------------- companies (tech, retail, finance, Indian) -----
+    (23, "companies_tech", "Tech company names", [
         "Open Google Calendar.",
         "Search on Microsoft Bing.",
         "Send a Slack message to the design channel.",
@@ -515,15 +264,9 @@
         "Set up a Zoom call for five PM today.",
         "Sync the contacts with the Salesforce CRM.",
         "Post an update on the Notion engineering wiki.",
-        "Open the Stripe payment dashboard."
-      ]
-    },
-    {
-      "id": 24,
-      "name": "companies_indian",
-      "title": "Indian companies and conglomerates",
-      "manual_only": false,
-      "lines": [
+        "Open the Stripe payment dashboard.",
+    ], False),
+    (24, "companies_indian", "Indian companies and conglomerates", [
         "Order groceries from BigBasket for tonight.",
         "Book a cab on Ola to the airport.",
         "Send a message to my team on Flipkart workspace.",
@@ -538,15 +281,9 @@
         "Schedule a meeting with the Tata Motors dealer.",
         "Check my HDFC bank account balance.",
         "Apply for a credit card on the ICICI website.",
-        "Renew my IRCTC tatkal booking for tomorrow."
-      ]
-    },
-    {
-      "id": 25,
-      "name": "brands_consumer",
-      "title": "Consumer brands and products",
-      "manual_only": false,
-      "lines": [
+        "Renew my IRCTC tatkal booking for tomorrow.",
+    ], False),
+    (25, "brands_consumer", "Consumer brands and products", [
         "Order a Domino's margherita pizza for dinner.",
         "Buy a Cadbury Dairy Milk on the way home.",
         "Add Nescafe classic to the shopping list.",
@@ -561,15 +298,11 @@
         "Buy a pair of Levi's five zero one jeans.",
         "Restock the Dove shampoo and conditioner.",
         "Order a BigBasket monthly grocery pack.",
-        "Find the cheapest Sony Bravia fifty five inch."
-      ]
-    },
-    {
-      "id": 26,
-      "name": "places_indian",
-      "title": "Indian cities and landmarks",
-      "manual_only": false,
-      "lines": [
+        "Find the cheapest Sony Bravia fifty five inch.",
+    ], False),
+
+    # ---------------- places: Indian + world -----------------------
+    (26, "places_indian", "Indian cities and landmarks", [
         "Take me to India Gate in New Delhi.",
         "Find a hotel near Charminar in Hyderabad.",
         "Navigate to Howrah Bridge in Kolkata.",
@@ -584,15 +317,9 @@
         "Find a hotel near Hawa Mahal in Jaipur.",
         "Take me to the airport in Goa.",
         "Find the nearest Starbucks in Bandra.",
-        "Navigate to the Wankhede Stadium in Mumbai."
-      ]
-    },
-    {
-      "id": 27,
-      "name": "places_world",
-      "title": "World cities and landmarks",
-      "manual_only": false,
-      "lines": [
+        "Navigate to the Wankhede Stadium in Mumbai.",
+    ], False),
+    (27, "places_world", "World cities and landmarks", [
         "Book a flight to Tokyo next month.",
         "Find a hotel near Times Square in New York.",
         "Navigate to the Eiffel Tower in Paris.",
@@ -607,15 +334,11 @@
         "Find a restaurant near the Burj Khalifa.",
         "Take me to the Grand Canyon south rim.",
         "Navigate to the Statue of Liberty.",
-        "Book a flight to Singapore for next Friday."
-      ]
-    },
-    {
-      "id": 28,
-      "name": "numbers_currency",
-      "title": "Numbers, phone numbers, currency",
-      "manual_only": false,
-      "lines": [
+        "Book a flight to Singapore for next Friday.",
+    ], False),
+
+    # ---------------- numbers, dates, currency ----------------------
+    (28, "numbers_currency", "Numbers, phone numbers, currency", [
         "Transfer fifteen thousand rupees to my savings account.",
         "Set a reminder for the twenty fifth of December.",
         "Call nine eight seven six five four three two one zero.",
@@ -630,15 +353,11 @@
         "Calculate eighteen percent GST on twelve thousand.",
         "Dial plus nine one nine eight seven six five four three two one zero.",
         "Add the numbers four five six and seven eight nine.",
-        "What's the date twenty days from today?"
-      ]
-    },
-    {
-      "id": 29,
-      "name": "hinglish_daily",
-      "title": "Hinglish daily commands",
-      "manual_only": true,
-      "lines": [
+        "What's the date twenty days from today?",
+    ], False),
+
+    # ---------------- Hinglish: daily ------------------------------
+    (29, "hinglish_daily", "Hinglish daily commands", [
         "Yaar, alarm laga do subah chhe baje.",
         "Aaj mausam kaisa hai, bata do.",
         "Bhai, ek chai banake de sakte ho?",
@@ -653,15 +372,9 @@
         "Aaj gym jaana hai, time batao.",
         "Acha suno, ek kaam karna tha.",
         "Mujhe thoda pani chahiye abhi.",
-        "Office kaunse time pe niklna hai?"
-      ]
-    },
-    {
-      "id": 30,
-      "name": "hinglish_food",
-      "title": "Hinglish: food and cooking",
-      "manual_only": true,
-      "lines": [
+        "Office kaunse time pe niklna hai?",
+    ], True),
+    (30, "hinglish_food", "Hinglish: food and cooking", [
         "Paneer butter masala ki recipe bata do.",
         "Biryani mein kitna time lagega banne mein?",
         "Maggi banao, yaar, bhookh lag rahi hai.",
@@ -676,15 +389,9 @@
         "Lassi meethi banao thodi.",
         "Palak paneer ki sabzi mein kitni palak chahiye?",
         "Khichdi banao aaj dinner ke liye.",
-        "Egg omelette banao, desi style."
-      ]
-    },
-    {
-      "id": 31,
-      "name": "hinglish_travel",
-      "title": "Hinglish: travel and directions",
-      "manual_only": true,
-      "lines": [
+        "Egg omelette banao, desi style.",
+    ], True),
+    (31, "hinglish_travel", "Hinglish: travel and directions", [
         "Airport tak kitna time lagega, yaar?",
         "Auto wala kahan milega yahan se?",
         "Train platform number kya hai Patna ki?",
@@ -699,15 +406,11 @@
         "Auto meter se chalao please.",
         "Bhai, ghar ka raasta bata do.",
         "Station pe pahunchne mein time lagega kya?",
-        "Yeh address sahi hai kya, verify karo."
-      ]
-    },
-    {
-      "id": 32,
-      "name": "hinglish_code_dev",
-      "title": "Hinglish \u00d7 tech: dev words",
-      "manual_only": true,
-      "lines": [
+        "Yeh address sahi hai kya, verify karo.",
+    ], True),
+
+    # ---------------- Hinglish complex: code/dev/AI ---------------
+    (32, "hinglish_code_dev", "Hinglish × tech: dev words", [
         "Bhai, GitHub pe mera code push kar de.",
         "VS Code mein yeh file open karo please.",
         "Terminal khol ke npm install chala do.",
@@ -722,15 +425,9 @@
         "Localhost pe server start karo port three thousand pe.",
         "Merge conflict resolve karna hai, help karo.",
         "Database ka backup le lo aaj raat ko.",
-        "API endpoint hit karke response dikhao."
-      ]
-    },
-    {
-      "id": 33,
-      "name": "hinglish_office",
-      "title": "Hinglish: office and work",
-      "manual_only": true,
-      "lines": [
+        "API endpoint hit karke response dikhao.",
+    ], True),
+    (33, "hinglish_office", "Hinglish: office and work", [
         "Boss ko bol do meeting late ho jayegi.",
         "Mail likh do client ko, professional tone mein.",
         "Excel sheet mein data entry kar do.",
@@ -745,15 +442,9 @@
         "KPI dashboard update karo is week ka.",
         "Office WiFi ka password kya hai, yaar?",
         "Joining letter draft kar do, please.",
-        "Salary slip email kar do HR se mangwa ke."
-      ]
-    },
-    {
-      "id": 34,
-      "name": "hinglish_tech_terms",
-      "title": "Hinglish: AI and tech jargon",
-      "manual_only": true,
-      "lines": [
+        "Salary slip email kar do HR se mangwa ke.",
+    ], True),
+    (34, "hinglish_tech_terms", "Hinglish: AI and tech jargon", [
         "Bhai yeh model train karna hai meri awaaz pe.",
         "GPU pe inference chala raha hoon, load zyada hai.",
         "Token count kitna hai is prompt ka?",
@@ -768,15 +459,11 @@
         "Overfitting ho raha hai, dropout badhao.",
         "Gradient clipping lagao training mein.",
         "Checkpoint save karo har epoch ke baad.",
-        "Inference server pe model deploy karo."
-      ]
-    },
-    {
-      "id": 35,
-      "name": "hinglish_english_mix",
-      "title": "Hinglish + English code-switching",
-      "manual_only": true,
-      "lines": [
+        "Inference server pe model deploy karo.",
+    ], True),
+
+    # ---------------- Hinglish + English code-switching -----------
+    (35, "hinglish_english_mix", "Hinglish + English code-switching", [
         "Yaar ek reminder laga do for tomorrow at 5 PM.",
         "Bhai, yeh Slack message forward kar do manager ko.",
         "Mera Zoom call shuru hone wala hai in 5 minutes.",
@@ -791,15 +478,9 @@
         "LinkedIn pe job search kar raha hoon, kuch dikha kya?",
         "Spotify pe lo-fi playlist chala do, study kar raha hoon.",
         "Gym ke baad coffee pe milte hain, chalega?",
-        "Bhai ek YouTube video dikhao on how to cook biryani."
-      ]
-    },
-    {
-      "id": 36,
-      "name": "hinglish_mid_sentence",
-      "title": "Hinglish words inside English sentences",
-      "manual_only": true,
-      "lines": [
+        "Bhai ek YouTube video dikhao on how to cook biryani.",
+    ], True),
+    (36, "hinglish_mid_sentence", "Hinglish words inside English sentences", [
         "Set a reminder for tomorrow yaar.",
         "Book a cab on Ola, please.",
         "Schedule a meeting with the team, boss ko bhi add karna.",
@@ -814,15 +495,11 @@
         "Set an alarm for six AM, thak gaya hoon.",
         "Add milk and bread to the shopping list, doodh khatam hai.",
         "Translate this sentence to Hindi, please.",
-        "Open the calculator, thoda calculate karna hai."
-      ]
-    },
-    {
-      "id": 37,
-      "name": "brands_tech_products",
-      "title": "Tech brand product names",
-      "manual_only": false,
-      "lines": [
+        "Open the calculator, thoda calculate karna hai.",
+    ], True),
+
+    # ---------------- brands (fashion, food, tech) -----------------
+    (37, "brands_tech_products", "Tech brand product names", [
         "Buy an iPhone fifteen Pro Max.",
         "Order the MacBook Air M three.",
         "Add a Sony WH-1000XM five to the wish list.",
@@ -837,15 +514,9 @@
         "Add a Kindle Paperwhite to the cart.",
         "Order a GoPro Hero twelve black.",
         "Look up the price of an Alienware m eighteen.",
-        "Buy a Raspberry Pi five with eight gigs of RAM."
-      ]
-    },
-    {
-      "id": 38,
-      "name": "brands_food_retail",
-      "title": "Food and retail brand names",
-      "manual_only": false,
-      "lines": [
+        "Buy a Raspberry Pi five with eight gigs of RAM.",
+    ], False),
+    (38, "brands_food_retail", "Food and retail brand names", [
         "Order a Big Mac from McDonald's.",
         "Buy a latte from Starbucks.",
         "Reorder the Amul dark chocolate.",
@@ -860,15 +531,11 @@
         "Buy a Baskin Robbins chocolate chip ice cream.",
         "Reorder the Tata Sampann toor dal.",
         "Add a McCain pizza to the cart.",
-        "Book a Domino's stuffed crust for tonight."
-      ]
-    },
-    {
-      "id": 39,
-      "name": "complex_english_legal",
-      "title": "Complex English: legal terms",
-      "manual_only": false,
-      "lines": [
+        "Book a Domino's stuffed crust for tonight.",
+    ], False),
+
+    # ---------------- misc complex: legal, philosophy, history ----
+    (39, "complex_english_legal", "Complex English: legal terms", [
         "The defendant has the right to remain silent.",
         "File a motion to dismiss the case.",
         "The affidavit must be notarised before submission.",
@@ -883,15 +550,9 @@
         "Compute the court fee for this civil suit.",
         "File a public interest litigation in the Supreme Court.",
         "Appeal the lower court's verdict in the appellate tribunal.",
-        "Register the trademark with the IP India registry."
-      ]
-    },
-    {
-      "id": 40,
-      "name": "complex_english_philosophy",
-      "title": "Complex English: philosophy, literature, history",
-      "manual_only": false,
-      "lines": [
+        "Register the trademark with the IP India registry.",
+    ], False),
+    (40, "complex_english_philosophy", "Complex English: philosophy, literature, history", [
         "The unexamined life is not worth living, said Socrates.",
         "I think therefore I am, said Descartes.",
         "Discuss the central theme of existentialism.",
@@ -906,15 +567,11 @@
         "Discuss the philosophy of Mahatma Gandhi's satyagraha.",
         "Who wrote the Communist Manifesto?",
         "Summarise the Treaty of Versailles in one minute.",
-        "Explain the difference between a meteor and a meteorite."
-      ]
-    },
-    {
-      "id": 41,
-      "name": "wake_identity",
-      "title": "Wake word and identity confirmation",
-      "manual_only": false,
-      "lines": [
+        "Explain the difference between a meteor and a meteorite.",
+    ], False),
+
+    # ---------------- voice assistant specific: wake word + identity -
+    (41, "wake_identity", "Wake word and identity confirmation", [
         "Hey Cozy, are you there?",
         "Cozy, what can you do for me?",
         "Hey Cozy, who made you?",
@@ -929,15 +586,11 @@
         "Cozy, switch to English mode.",
         "Hey Cozy, switch to Hinglish mode.",
         "Cozy, take a note for me.",
-        "Hey Cozy, let's start the day."
-      ]
-    },
-    {
-      "id": 42,
-      "name": "error_recovery",
-      "title": "Error recovery and repeats",
-      "manual_only": false,
-      "lines": [
+        "Hey Cozy, let's start the day.",
+    ], False),
+
+    # ---------------- error recovery: stt failures / repeats -------
+    (42, "error_recovery", "Error recovery and repeats", [
         "Sorry, can you repeat that?",
         "I didn't catch that, say it again please.",
         "Cancel that last command.",
@@ -952,15 +605,11 @@
         "Yes, that's what I wanted.",
         "No, try again please.",
         "Hmm, that's not right either.",
-        "Okay perfect, thank you."
-      ]
-    },
-    {
-      "id": 43,
-      "name": "hinglish_long_multi",
-      "title": "Long Hinglish: multi-clause sentences",
-      "manual_only": true,
-      "lines": [
+        "Okay perfect, thank you.",
+    ], False),
+
+    # ---------------- Hinglish long, multi-clause -------------------
+    (43, "hinglish_long_multi", "Long Hinglish: multi-clause sentences", [
         "Yaar, subah aath baje ki meeting hai toh alarm chhe baje laga dena aur chai bhi ready rakhna please.",
         "Bhai, market jaana hai shaam ko, pehle kapde iron kar do aur grocery list bhi check karna.",
         "Mummy ko bol dena main late hoon aur dinner ke liye guest aa rahe hain toh extra plate rakh lena.",
@@ -975,15 +624,11 @@
         "Yaar shaam ko cricket khelne jaana hai ground pe, saare logo ko message karke confirm kar lena, bat bhi le jaana.",
         "Mujhe ek acchi book chahiye motivation wali, Amazon pe search karke best seller wali order kar do.",
         "Kal anniversary hai, wife ko surprise plan karna hai - restaurant book karo aur cake bhi order kar do, accha sa.",
-        "Bhai, ek assignment submit karna hai college mein, deadline kal hai aur main bore ho gaya hoon, help kar do please."
-      ]
-    },
-    {
-      "id": 44,
-      "name": "small_talk_motivation",
-      "title": "Small talk, motivation, jokes",
-      "manual_only": false,
-      "lines": [
+        "Bhai, ek assignment submit karna hai college mein, deadline kal hai aur main bore ho gaya hoon, help kar do please.",
+    ], True),
+
+    # ---------------- fun: small talk, jokes, motivation ------------
+    (44, "small_talk_motivation", "Small talk, motivation, jokes", [
         "Tell me a fun fact.",
         "What's the meaning of life in one sentence?",
         "Motivate me for the day.",
@@ -998,8 +643,56 @@
         "Tell me a tongue twister.",
         "What should I do when I feel overwhelmed?",
         "Sing me a happy birthday song.",
-        "Wish my friend happy birthday in a creative way."
-      ]
-    }
-  ]
-}
+        "Wish my friend happy birthday in a creative way.",
+    ], False),
+]
+
+
+# -------------------------------------------------------------- driver
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--replace", action="store_true",
+                    help="drop existing sessions with id >= 10 before regenerating")
+    ap.add_argument("--per-session", type=int, default=15,
+                    help="warn if a session has fewer than this many lines")
+    args = ap.parse_args()
+
+    existing = []
+    if PROMPTS.exists():
+        existing = json.loads(PROMPTS.read_text()).get("sessions", [])
+
+    if args.replace:
+        existing = [s for s in existing if s["id"] < 10]
+        print(f"--replace: kept sessions {sorted(s['id'] for s in existing)}", flush=True)
+
+    have = {s["id"] for s in existing}
+    added = 0
+    for sid, name, title, lines, manual in SESSIONS:
+        if sid in have:
+            print(f"  · session {sid:2d} '{name}' exists, skipping")
+            continue
+        if len(lines) < args.per_session:
+            print(f"  ! session {sid:2d} '{name}' has only {len(lines)} lines "
+                  f"(expected {args.per_session})", flush=True)
+        existing.append({
+            "id": sid,
+            "name": name,
+            "title": title,
+            "manual_only": bool(manual),
+            "lines": lines,
+        })
+        added += 1
+        print(f"  + session {sid:2d} '{name}'  ({len(lines)} lines, "
+              f"manual_only={bool(manual)})")
+
+    # renumber/keep order
+    existing.sort(key=lambda s: s["id"])
+    out = {"sessions": existing}
+    PROMPTS.write_text(json.dumps(out, indent=2))
+    total = sum(len(s["lines"]) for s in existing)
+    print(f"\nWrote {PROMPTS}  |  {len(existing)} sessions, {total} lines "
+          f"({added} added)")
+
+
+if __name__ == "__main__":
+    main()
