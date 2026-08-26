@@ -60,15 +60,16 @@ def main() -> None:
                         "gate_proj", "up_proj", "down_proj"],
     )
     model = get_peft_model(model, lora)
+    model = model.to("cuda")  # explicit: never fall back to CPU silently
     model.print_trainable_parameters()
 
     cfg = SFTConfig(
         output_dir=str(HERE / "model" / "sft_runs"),
         num_train_epochs=3,
         learning_rate=1e-4,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=4,
-        per_device_eval_batch_size=4,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=8,
+        per_device_eval_batch_size=2,
         eval_strategy="steps",
         eval_steps=40,
         logging_steps=10,
