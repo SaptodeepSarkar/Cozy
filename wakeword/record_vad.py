@@ -146,9 +146,14 @@ LOOKALIKES = {
     "toasty": "hey toasty",
 }
 
-HEY_COZY_PROMPTS = ["hey cozy", "hey cozy", "hey cozy", "cozy",
-                     "hey cozy open firefox",
-                     "hey cozy set volume to fifty"]
+HEY_COZY_PROMPTS = [
+    "hey cozy",
+    "hey cosy",
+    "hey cozy",
+    "cozy",
+    "hey kozie",
+    "hey Cozy",
+]
 
 
 def main() -> None:
