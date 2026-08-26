@@ -1,88 +1,204 @@
-#!/usr/bin/env python
-"""Cozy STT live TUI — Silero-VAD streaming transcription with a rich UI.
+#!/usr/bin/env python3
+"""
+Cozy STT — Prime-Agent-style live TUI for testing the finetuned model.
 
-    .venv/bin/python scripts/tui.py                 # mic stream, auto engine
-    .venv/bin/python scripts/tui.py --engine hf     # verbatim Hinglish verdicts
-    .venv/bin/python scripts/tui.py --simulate recordings/session_1/000.wav
-
-Layout: status header + live level meter + verdict history table.
-Ctrl+C quits. Models load once before listening starts.
+Layout:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ 🎤 COZY STT  • engine: hf  • uptime 00:42  • verdicts: 7    │
+  │ ● LISTENING  2.3s              [ct2] 178ms                  │
+  │ ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░ -18 dB  ⚠ clipping               │
+  │  ╭▁▂▃▅▇▅▃▂▁▂▃▅▇▆▄▂▁▂▃▅▇▅▃▂▁╮  waveform                  │
+  │ ┌─ LAST VERDICT ─────────────────────────────────────────┐ │
+  │ │ Hey Cozy, what time is it right now?                  │ │
+  │ └────────────────────────────────────────────────────────┘ │
+  │ HISTORY                                                    │
+  │ #  eng  ms   transcript                                    │
+  │ 7  hf   178  Hey Cozy, what time is it right now?         │
+  │ ...                                                        │
+  └──────────────────────────────────────────────────────────────┘
+  Ctrl+C to quit • --engine hf • --max-len 60s
 """
 import argparse
+import math
+import os
 import queue
 import sys
 import threading
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from infer import Engines  # noqa: E402
 
-STATE = {
-    "status": "loading",
-    "level": 0.0,
-    "peak": 0,
-    "clip": False,
-    "utter_s": 0.0,
-    "last": "",
-    "engine": "-",
-    "latency_ms": 0,
-    "history": deque(maxlen=14),
-    "count": 0,
-}
+# ---------- shared state (worker thread writes, UI thread reads) ----
+class State:
+    def __init__(self):
+        self.status = "loading"          # loading / ready / listening / transcribing
+        self.utter_s = 0.0
+        self.t_start = time.time()
+        self.engine_pref = "hf"
+        self.last_eng = "-"
+        self.last_ms = 0
+        self.last_text = ""
+        self.peak = 0
+        self.clip_warn = False
+        self.history = deque(maxlen=18)  # (eng, ms, text, ts)
+        self.count = 0
+        self.total_ms = 0
+        self.wave = deque(maxlen=60)     # recent RMS values for waveform
+        self.wave.append(0.0)
+
+    @property
+    def avg_ms(self):
+        return self.total_ms / max(1, self.count)
+
+    @property
+    def uptime_s(self):
+        return time.time() - self.t_start
 
 
-def level_bar(rms, width=28):
-    blocks = " ▁▂▃▄▅▆▇█"
-    n = min(width, int((min(rms, 8000) / 8000) ** 0.6 * width))
-    bar = "█" * n + "░" * (width - n)
-    color = "green" if rms < 4000 else ("yellow" if rms < 7000 else "red")
-    return f"[{color}]{bar}[/{color}]"
+S = State()
 
 
+# ---------- visual primitives -----------------------------------------
+def level_color(rms):
+    if rms < 1500: return "green"
+    if rms < 4500: return "yellow"
+    if rms < 7000: return "dark_orange"
+    return "bold red"
+
+
+def vu_meter(rms, width=24):
+    n = min(width, int((min(rms, 9000) / 9000) ** 0.5 * width))
+    bar = "▓" * n + "░" * (width - n)
+    db = 20 * math.log10(max(rms, 1) / 32768.0)
+    return f"[{level_color(rms)}]{bar}[/{level_color(rms)}] {db:+.0f} dB"
+
+
+def waveform(wave, height=6, width=42):
+    """Render the recent RMS window as ASCII bars."""
+    if not wave:
+        return ""
+    cols = list(wave)[-width:]
+    # normalize to height
+    peak = max(cols) or 1.0
+    rows = []
+    for h in range(height - 1, -1, -1):
+        line = []
+        for v in cols:
+            norm = v / peak
+            if norm >= h / height:
+                line.append("█")
+            else:
+                line.append(" ")
+        rows.append("".join(line))
+    return "\n".join(rows)
+
+
+def pulse_dot(status):
+    colors = {
+        "loading": "dim",
+        "ready": "bold green",
+        "listening": "bold yellow",
+        "transcribing": "bold cyan",
+    }
+    return f"[{colors.get(status, 'white')}]●[/{colors.get(status, 'white')}]"
+
+
+# ---------- main render ----------------------------------------------
 def render():
     from rich.console import Group
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text
 
-    s = STATE
-    status_color = {"listening": "yellow", "transcribing": "cyan",
-                    "ready": "green", "loading": "dim"}.get(s["status"], "white")
-    head = Table.grid(padding=(0, 2))
-    head.add_column(justify="left")
-    head.add_column(justify="right")
-    status_line = Text()
-    status_line.append("● ", style=status_color)
-    status_line.append(s["status"].upper(), style=f"bold {status_color}")
-    if s["status"] == "listening":
-        status_line.append(f"  {s['utter_s']:0.1f}s", style="yellow")
-    head.add_row(status_line,
-                 Text(f"engine={s['engine']}  verdicts={s['count']}",
-                      style="dim"))
-    head.add_row(Text(f"level {level_bar(s['level'])}  peak={s['peak']}"),
-                 Text(("⚠ CLIPPING — lower mic gain" if s["clip"]
-                       else f"latency {s['latency_ms']}ms"),
-                      style="bold red" if s["clip"] else "dim"))
+    s = S
+    mins, secs = divmod(int(s.uptime_s), 60)
+    header = Text()
+    header.append("🎤 COZY STT  ", style="bold white")
+    header.append(f"• engine: {s.engine_pref}", style="dim")
+    header.append(f"  • uptime {mins:02d}:{secs:02d}", style="dim")
+    header.append(f"  • verdicts: {s.count}", style="bold cyan")
+    if s.count:
+        header.append(f"  • avg {s.avg_ms:.0f}ms", style="dim")
 
-    hist = Table(expand=True, box=None, pad_edge=False)
-    hist.add_column("#", width=4, style="dim")
+    # status + timer
+    status_line = Text()
+    status_line.append_text(Text.from_markup(pulse_dot(s.status)))
+    status_line.append(f" {s.status.upper()}", style="bold")
+    if s.status == "listening":
+        status_line.append(f"  {s.utter_s:0.1f}s", style="yellow")
+    elif s.status == "transcribing":
+        status_line.append(" …", style="cyan")
+    if s.last_eng != "-":
+        eng_color = "green" if s.last_eng == "ct2" else "cyan"
+        status_line.append(
+            f"    last: [{eng_color}]{s.last_eng}[/{eng_color}] {s.last_ms}ms",
+            style="dim",
+        )
+
+    # VU meter
+    clip = Text()
+    if s.clip_warn:
+        clip.append("  ⚠ CLIPPING — lower mic gain", style="bold red")
+    vu = Text.from_markup(vu_meter(s.peak)) + clip
+
+    # waveform
+    wave_panel = Panel(
+        waveform(list(s.wave)),
+        title="waveform",
+        title_align="left",
+        border_style="dim",
+        width=44,
+        height=8,
+    )
+
+    # big last verdict
+    last_text = s.last_text or "— waiting for first verdict —"
+    big = Panel(
+        Text(last_text, style="bold", justify="center"),
+        title="LAST VERDICT",
+        border_style="cyan" if s.last_eng == "hf" else "green",
+        padding=(1, 2),
+    )
+
+    # history
+    hist = Table(expand=True, box=None, pad_edge=False, show_header=True)
+    hist.add_column("#", width=3, style="dim")
     hist.add_column("eng", width=5)
-    hist.add_column("ms", width=6, justify="right")
+    hist.add_column("ms", width=5, justify="right")
     hist.add_column("transcript", overflow="fold")
-    for i, (eng, ms, txt) in enumerate(reversed(s["history"])):
-        hist.add_row(str(len(s["history"]) - i),
-                     "[cyan]hf[/cyan]" if eng == "hf" else "[green]ct2[/green]",
-                     f"{ms:.0f}", txt)
+    for i, (eng, ms, txt, ts) in enumerate(reversed(s.history)):
+        h, m = divmod(int(time.time() - ts), 60)
+        eng_styled = (f"[green]{eng}[/green]" if eng == "ct2"
+                      else f"[cyan]{eng}[/cyan]")
+        hist.add_row(
+            str(len(s.history) - i),
+            eng_styled,
+            f"{ms:.0f}",
+            txt,
+        )
+
+    footer = Text()
+    footer.append("Ctrl+C", style="bold")
+    footer.append(" quit", style="dim")
+    footer.append("  •  ", style="dim")
+    footer.append(f"--engine {s.engine_pref}", style="dim")
+    footer.append("  •  --max-len 60s", style="dim")
 
     return Group(
-        Panel(head, title="[b]🎤 Cozy STT Live[/b] — Silero VAD stream",
-              subtitle="Ctrl+C to quit", subtitle_align="right"),
-        Panel(hist, title="verdict history"),
+        Panel(header, border_style="bright_blue"),
+        Panel(Group(status_line, vu, wave_panel),
+              border_style="bright_blue"),
+        big,
+        Panel(hist, title="HISTORY", border_style="bright_blue"),
+        footer,
     )
 
 
+# ---------- audio thread ---------------------------------------------
 def audio_worker(q, engines, engine, max_len):
     import numpy as np
     from silero_vad import VADIterator, load_silero_vad
@@ -97,9 +213,13 @@ def audio_worker(q, engines, engine, max_len):
     while True:
         pcm = np.frombuffer(q.get(), dtype=np.int16)
         rms = float(np.abs(pcm.astype(np.float32)).mean())
-        STATE["level"], STATE["peak"] = rms, max(int(np.abs(pcm).max()), 0)
-        if STATE["peak"] >= 32000:
-            STATE["clip"] = True
+        S.wave.append(rms)
+        S.peak = max(int(np.abs(pcm).max()), 0)
+        if S.peak >= 32000:
+            S.clip_warn = True
+        else:
+            S.clip_warn = False
+
         chunk = pcm.astype(np.float32) / 32768.0
         event = vad(chunk)
 
@@ -110,78 +230,111 @@ def audio_worker(q, engines, engine, max_len):
             if event and "start" in event:
                 speaking, speech_buf, preroll = True, list(preroll), []
                 t_start = time.time()
-                STATE["status"] = "listening"
+                S.status = "listening"
         else:
             speech_buf.append(chunk)
-            STATE["utter_s"] = time.time() - t_start
-            done = (event and "end" in event) or STATE["utter_s"] > max_len
+            S.utter_s = time.time() - t_start
+            done = (event and "end" in event) or S.utter_s > max_len
             if done:
                 audio = np.concatenate(speech_buf) if speech_buf else None
                 speech_buf, speaking = [], False
-                STATE["status"], STATE["utter_s"] = "transcribing", 0.0
+                S.status = "transcribing"
                 if audio is not None and len(audio) > 4800:
                     t0 = time.time()
                     text, used = engines.transcribe_array(audio, engine)
                     ms = (time.time() - t0) * 1000
-                    STATE["last"], STATE["engine"] = text, used
-                    STATE["latency_ms"] = int(ms)
-                    STATE["history"].append((used, ms, text or "(silence)"))
-                    STATE["count"] += 1
-                STATE["status"] = "ready"
+                    S.last_eng, S.last_ms, S.last_text = used, int(ms), text
+                    S.history.append((used, ms, text or "(silence)", time.time()))
+                    S.count += 1
+                    S.total_ms += ms
+                S.status = "ready"
 
 
+# ---------- main -----------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--engine", choices=["auto", "ct2", "hf"], default="auto")
-    ap.add_argument("--max-len", type=float, default=60.0)
-    ap.add_argument("--simulate", help="feed a wav through the same pipeline "
-                                       "(no mic) and exit after first verdict")
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--engine", choices=["auto", "ct2", "hf"], default="hf",
+                    help="default: hf (Hinglish-aware). Use auto/ct2 for fast English.")
+    ap.add_argument("--max-len", type=float, default=60.0,
+                    help="force-flush an utterance after this many seconds")
+    ap.add_argument("--simulate",
+                    help="feed a wav through the same pipeline (no mic) and exit "
+                         "after first verdict — for quick smoke tests")
     args = ap.parse_args()
 
+    S.engine_pref = args.engine
+
     from rich.live import Live
-    print("[tui] loading engines once ...")
+    import numpy as np
+
+    # Load engines FIRST so the user doesn't wait during first utterance
+    print("[tui] loading engines once ...", file=sys.stderr, flush=True)
     engines = Engines()
     engines.warmup(args.engine)
-    STATE["status"] = "ready"
+    S.status = "ready"
 
     q = queue.Queue()
+
     if args.simulate:
         import librosa
-        import numpy as np
         from silero_vad import VADIterator, load_silero_vad
 
         audio, _ = librosa.load(args.simulate, sr=16000, mono=True)
         audio = np.concatenate([audio, np.zeros(12000, dtype=np.float32)])
-        vad = VADIterator(load_silero_vad(), sampling_rate=16000,
-                          threshold=0.45, min_silence_duration_ms=650,
-                          speech_pad_ms=120)
-        threading.Thread(target=lambda: [q.put(b) for b in
-                         [(audio[i:i+512] * 32767).astype(np.int16).tobytes()
-                          for i in range(0, len(audio) - 511, 512)]],
-                         daemon=True).start()
+
+        def feeder():
+            for i in range(0, len(audio) - 511, 512):
+                q.put((audio[i:i + 512] * 32767).astype(np.int16).tobytes())
+
+        threading.Thread(target=feeder, daemon=True).start()
+        worker = threading.Thread(target=audio_worker,
+                                  args=(q, engines, args.engine, args.max_len),
+                                  daemon=True)
+        worker.start()
     else:
         import sounddevice as sd
-        # sounddevice starts on enter; the "with" context opens the stream
-        sd.RawInputStream(samplerate=16000, blocksize=512, dtype="int16",
-                          channels=1, callback=lambda i, f, t, s:
-                          q.put(bytes(i)))
+        # open the mic stream in a context manager — it actually starts
+        # when the `with` block is entered
+        print(f"[tui] opening mic @ 16 kHz, blocksize 512 ...", file=sys.stderr, flush=True)
+        try:
+            stream = sd.RawInputStream(samplerate=16000, blocksize=512,
+                                       dtype="int16", channels=1,
+                                       callback=lambda i, f, t, s:
+                                       q.put(bytes(i)))
+        except Exception as e:
+            sys.exit(f"[tui] could not open mic: {e}\n"
+                     "    check `arecord -l` and PulseAudio source selection")
+        with stream:
+            worker = threading.Thread(target=audio_worker,
+                                      args=(q, engines, args.engine,
+                                            args.max_len), daemon=True)
+            worker.start()
+            try:
+                with Live(render(), refresh_per_second=12, screen=False) as live:
+                    while True:
+                        time.sleep(0.08)
+                        live.update(render())
+                        if args.simulate and S.count >= 1:
+                            time.sleep(1.0)
+                            break
+            except KeyboardInterrupt:
+                pass
+            print("\n[tui] bye", file=sys.stderr, flush=True)
+            return
 
-    worker = threading.Thread(target=audio_worker,
-                              args=(q, engines, args.engine, args.max_len),
-                              daemon=True)
-    worker.start()
-
+    # simulate mode (no `with` for the mic)
     try:
         with Live(render(), refresh_per_second=12, screen=False) as live:
             while True:
                 time.sleep(0.08)
                 live.update(render())
-                if args.simulate and STATE["count"] >= 1:
+                if args.simulate and S.count >= 1:
                     time.sleep(1.0)
                     break
     except KeyboardInterrupt:
         pass
-    print("\n[tui] bye")
+    print("\n[tui] bye", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
