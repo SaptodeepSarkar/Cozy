@@ -93,26 +93,37 @@ def llm_decide(tok, model, user_text):
         "answer briefly and warmly without tools."
     )
     prompt = tok.apply_chat_template(
+        # note: enable_thinking=False passed below to keep voice replies fast
+        # enable_thinking=False keeps Qwen3 fast for voice commands
         [{"role": "system", "content": system},
          {"role": "user", "content": user_text}],
         tools=schema,
         tokenize=False,
         add_generation_prompt=True,
+        enable_thinking=False,
     )
     ids = tok(prompt, return_tensors="pt").to(model.device)
     out = model.generate(**ids, max_new_tokens=96, do_sample=False,
                          pad_token_id=tok.eos_token_id)
     text = tok.decode(out[0][ids["input_ids"].shape[1]:],
                       skip_special_tokens=True).strip()
+    # defensive: drop any residual Qwen3 thinking block
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
 
-    match = re.search(r"{[^{}]*}", text)
-    if match:
+    # Qwen3 emits tool calls in <tool_call>...</tool_call> tags
+    m_tag = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, flags=re.S)
+    candidates = []
+    if m_tag:
+        candidates.append(m_tag.group(1))
+    candidates += re.findall(r"\{[^{}]*\}", text)
+    for c in candidates:
         try:
-            call = json.loads(match.group(0))
+            call = json.loads(c)
             if isinstance(call.get("name"), str):
-                return None, call
+                params = call.get("parameters") or call.get("arguments") or {}
+                return None, {"name": call["name"], "parameters": params}
         except json.JSONDecodeError:
-            pass
+            continue
     return text or "...", None
 
 

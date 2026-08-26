@@ -128,9 +128,15 @@ def screenshot_take(params=None):
     tool = _which_any("gnome-screenshot")
     if tool:
         return _run([tool, "-f", out], timeout=20), out
+    tool = _which_any("grim")
+    if tool:
+        return _run([tool, out], timeout=20), out
     tool = _which_any("scrot")
     if tool:
         return _run([tool, out], timeout=20), out
+    tool = _which_any("import")
+    if tool:
+        return _run([tool, "-window", "root", out], timeout=20), out
     return False, "no screenshot tool"
 
 
