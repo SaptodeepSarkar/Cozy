@@ -59,11 +59,29 @@ class Engines:
             self._hf = WhisperForConditionalGeneration.from_pretrained(
                 str(HF), torch_dtype=torch.float16).to("cuda").eval()
             self._np = np
+            self._torch = torch
             print(f"[engine] HF transformers loaded in {time.time()-t0:.1f}s")
         return self._hf
 
+    def warmup(self, engine="auto"):
+        """Preload every relevant engine BEFORE the user starts speaking."""
+        import numpy as np
+        z = np.zeros(8000, dtype=np.float32)   # 0.5 s of silence
+        if engine in ("auto", "ct2") and CT2.exists():
+            m = self.ct2()
+            next(iter(m.transcribe(z, language="en", beam_size=1)), None)
+        if engine in ("auto", "hf") and HF.exists():
+            model = self.hf()
+            feats = self._hf_proc(z, sampling_rate=16000,
+                                  return_tensors="pt").input_features
+            feats = feats.to("cuda", self._torch.float16)
+            with self._torch.inference_mode():
+                model.generate(feats, language="english", task="transcribe",
+                               max_new_tokens=1)
+
     def transcribe_array(self, audio_f32, engine="auto"):
         """audio: float32 16 kHz mono. Returns (text, engine_used)."""
+        import torch
         audio_f32 = audio_f32.astype("float32", copy=False)
         if engine in ("auto", "ct2") and CT2.exists():
             try:
@@ -119,14 +137,10 @@ def stream_mode(engines, engine="auto"):
     speaking = False
     t_start = 0.0
 
-    print("[stream] listening — speak naturally; final text prints after "
-          "each sentence. Ctrl+C to quit.")
-    warm = np.zeros(8000, dtype=np.float32)  # trigger model preload
-    try:
-        engines.transcribe_array(warm, engine)
-    except RuntimeError as e:
-        sys.exit(str(e))
-    print("[stream] ready.")
+    print("[stream] warming up engines (loads once) ...")
+    engines.warmup(engine)
+    print(f"[stream] ready ({engine}) — speak naturally; final text prints "
+          "after each sentence. Ctrl+C to quit.")
 
     with sd.RawInputStream(samplerate=16000, blocksize=BLOCK, dtype="int16",
                            channels=1, callback=cb):
