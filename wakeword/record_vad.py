@@ -1,13 +1,18 @@
-"""Record wake-word samples with Silero VAD - only saves speech parts.
+"""Record 'hey cozy' / 'cozy' / lookalike takes with Silero VAD + energy filter.
+Only the voiced portion is kept - silence before, between, and after is stripped live.
 
 Usage:
-    python record_vad.py positive           # record "hey cozy" / "cozy" takes
-    python record_vad.py positive --bare    # record bare "cozy" only
-    python record_vad.py similar --word rosy
-    python record_vad.py auto               # auto-cycle through wake + lookalikes
+  python record_vad.py hey_cozy           # "hey cozy" / "hey cosy" takes
+  python record_vad.py hey_cozy --bare    # bare "cozy" only
+  python record_vad.py lookalike --word rosy
+  python record_vad.py lookalike --word nosy
+  python record_vad.py lookalike --word josie
+  python record_vad.py lookalike --word noisy
+  python record_vad.py lookalike --word dozy
+  python record_vad.py lookalike --word cosy
 
-Press Enter to start a take. Speak. Recording stops automatically
-when Silero VAD detects ~1.2s of silence after your voice.
+Press Enter to start a take. Speak. Recording stops automatically when VAD
+detects ~1.2s of post-speech silence.
 """
 from __future__ import annotations
 
@@ -26,19 +31,19 @@ HERE = Path(__file__).resolve().parent
 SR = 16000
 CHANNELS = 1
 DTYPE = "int16"
-BLOCK = 512  # 32ms frames - required for Silero VAD at 16kHz
+BLOCK = 512
 VAD_THRESHOLD = 0.5
-MIN_SPEECH_SEC = 0.3    # ignore blips shorter than this
-SILENCE_END_SEC = 1.2   # stop recording after this much post-speech silence
-PRE_SPEECH_PAD = 0.3    # keep this much audio before speech onset
-MAX_DURATION = 6.0      # hard cap per take
+ENERGY_FLOOR = 200
+MIN_SPEECH_SEC = 0.3
+SILENCE_END_SEC = 1.2
+PRE_SPEECH_PAD = 0.3
+MAX_DURATION = 6.0
 
 
 def load_vad():
-    model, _ = torch.hub.load(
+    return torch.hub.load(
         "snakers4/silero-vad", "silero_vad",
-        trust_repo=True, force_reload=False)
-    return model
+        trust_repo=True, force_reload=False)[0]
 
 
 def next_index(out_dir: Path, prefix: str) -> int:
@@ -59,59 +64,57 @@ def save_wav(path: Path, pcm: np.ndarray) -> None:
         wf.writeframes(pcm.tobytes())
 
 
+def is_voiced(block_pcm: np.ndarray, block_f: torch.Tensor, vad) -> bool:
+    prob = float(vad(block_f, SR).item())
+    energy = float(np.abs(block_pcm).max())
+    return prob >= VAD_THRESHOLD or energy >= ENERGY_FLOOR
+
+
 def take(vad, out_dir: Path, prefix: str, prompt: str) -> Path | None:
     idx = next_index(out_dir, prefix)
     out_path = out_dir / f"{prefix}_{idx:03d}.wav"
 
     print(f"\n>>> {prompt}")
-    print(f"    saving to: {out_path.name}")
-    input("    press Enter when ready, then speak... ")
+    print(f"    -> {out_path.name}")
+    input("    press Enter, then speak... ")
 
     pre_buffer: deque = deque(maxlen=int(PRE_SPEECH_PAD * SR / BLOCK))
     frames: list[np.ndarray] = []
     started = False
     silence_run = 0.0
-    speech_run = 0.0
-    started_at = 0.0
+    started_at = time.time()
 
     def callback(indata, _frames, _t, _status):
-        nonlocal silence_run, started, speech_run
+        nonlocal silence_run, started
         block = indata[:, 0].copy()
-        # Silero wants float32 in [-1, 1]
-        x = torch.from_numpy(block.astype(np.float32) / 32768.0)
-        prob = float(vad(x, SR).item())
+        block_f = torch.from_numpy(block.astype(np.float32) / 32768.0)
+        voiced = is_voiced(block, block_f, vad)
 
         if not started:
             pre_buffer.append(block)
-            if prob >= VAD_THRESHOLD:
+            if voiced:
                 started = True
-                speech_run = MIN_SPEECH_SEC
                 frames.extend(pre_buffer)
                 pre_buffer.clear()
-                return
         else:
             frames.append(block)
-            if prob >= VAD_THRESHOLD:
-                speech_run += BLOCK / SR
+            if voiced:
                 silence_run = 0.0
             else:
                 silence_run += BLOCK / SR
 
     with sd.InputStream(samplerate=SR, channels=CHANNELS, dtype=DTYPE,
                         blocksize=BLOCK, callback=callback):
-        started_at = time.time()
         while True:
             time.sleep(0.05)
-            if not started and (time.time() - started_at) > 0.5:
-                pass
             if started and silence_run >= SILENCE_END_SEC:
                 break
             if time.time() - started_at > MAX_DURATION:
-                print("    (max duration, stopping)")
+                print("    (max duration reached)")
                 break
 
     if not frames:
-        print("    no speech detected, skipped")
+        print("    no voice detected, skipped")
         return None
     pcm = np.concatenate(frames)
     dur = len(pcm) / SR
@@ -121,95 +124,67 @@ def take(vad, out_dir: Path, prefix: str, prompt: str) -> Path | None:
 
     peak = int(np.abs(pcm).max())
     if peak > 32000:
-        print(f"    WARNING: clipping (peak {peak}), consider lower mic gain")
+        print(f"    ! clipping (peak {peak}) - lower mic gain")
     elif peak < 700:
-        print(f"    WARNING: very quiet (peak {peak}), speak louder")
+        print(f"    ! very quiet (peak {peak}) - speak louder")
 
     save_wav(out_path, pcm)
     print(f"    saved {dur:.2f}s, peak={peak}")
     return out_path
 
 
-POSITIVE_PROMPTS = [
-    "hey cozy", "cozy",
-    "hey cozy open firefox",
-    "hey cozy set volume to fifty",
-]
-
-LOOKALIKE_PROMPTS = {
-    "rosy": ["hey rosy", "rosy"],
-    "nosy": ["hey nosy", "nosy"],
-    "josie": ["hey josie", "josie"],
-    "noisy": ["hey noisy", "noisy"],
-    "dozy": ["hey dozy", "dozy"],
-    "cosy": ["hey cosy", "cosy"],
-    "cozey": ["hey cozey", "cozey"],
-    "coz": ["hey coz", "coz"],
-    "posey": ["hey posey", "posey"],
-    "cosi": ["hey cosi", "cosi"],
-    "osie": ["hey osie", "osie"],
-    "frosty": ["hey frosty", "frosty"],
-    "toasty": ["hey toasty", "toasty"],
-    "most": ["hey most", "most"],
+LOOKALIKES = {
+    "rosy": "hey rosy",
+    "nosy": "hey nosy",
+    "josie": "hey josie",
+    "noisy": "hey noisy",
+    "dozy": "hey dozy",
+    "cosy": "hey cosy",
+    "cozey": "hey cozey",
+    "coz": "hey coz",
+    "frosty": "hey frosty",
+    "toasty": "hey toasty",
 }
+
+HEY_COZY_PROMPTS = ["hey cozy", "hey cozy", "hey cozy", "cozy",
+                     "hey cozy open firefox",
+                     "hey cozy set volume to fifty"]
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["positive", "similar", "auto"])
+    ap.add_argument("mode", choices=["hey_cozy", "lookalike"])
     ap.add_argument("--bare", action="store_true",
-                    help="positive mode: record bare 'cozy' only")
-    ap.add_argument("--word", help="similar mode: which lookalike word")
-    ap.add_argument("--count", type=int, default=20,
-                    help="auto mode: target count per category")
+                    help="hey_cozy mode: record bare 'cozy' only")
+    ap.add_argument("--word", required=False,
+                    help="lookalike mode: which lookalike word")
     args = ap.parse_args()
 
     print("loading Silero VAD...")
     vad = load_vad()
     print("ready\n")
 
-    if args.mode == "positive":
+    if args.mode == "hey_cozy":
         out_dir = HERE / "data" / "cozy"
-        prompts = ["cozy"] if args.bare else POSITIVE_PROMPTS
         prefix = "bare" if args.bare else "recording"
+        prompts = ["cozy"] if args.bare else HEY_COZY_PROMPTS
         while True:
-            prompt = prompts[len(list(out_dir.glob(prefix + "_*.wav"))) % len(prompts)]
+            n = len(list(out_dir.glob(prefix + "_*.wav")))
+            prompt = prompts[n % len(prompts)]
             take(vad, out_dir, prefix, prompt)
             if input("    another? (y/n) ").lower().strip() != "y":
                 break
 
-    elif args.mode == "similar":
-        if not args.word or args.word not in LOOKALIKE_PROMPTS:
-            print("pick a word:", ", ".join(LOOKALIKE_PROMPTS.keys()))
+    elif args.mode == "lookalike":
+        if not args.word or args.word not in LOOKALIKES:
+            print("pick a word:", ", ".join(LOOKALIKES.keys()))
             sys.exit(1)
         out_dir = HERE / "data" / "similar"
-        prefix = "recording_hey_" + args.word
+        prefix = f"recording_hey_{args.word}"
         while True:
-            take(vad, out_dir, prefix, args.word)
+            take(vad, out_dir, prefix, LOOKALIKES[args.word])
             if input("    another? (y/n) ").lower().strip() != "y":
                 break
-
-    elif args.mode == "auto":
-        # record N positive + N lookalikes in a cycle
-        for word in [None] + list(LOOKALIKE_PROMPTS.keys()):
-            target = args.count
-            while True:
-                if word is None:
-                    out_dir = HERE / "data" / "cozy"
-                    n = len(list(out_dir.glob("recording_*.wav")))
-                    if n >= target:
-                        break
-                    prompt = POSITIVE_PROMPTS[n % len(POSITIVE_PROMPTS)]
-                    prefix = "recording"
-                else:
-                    out_dir = HERE / "data" / "similar"
-                    n = len(list(out_dir.glob(f"recording_hey_{word}_*.wav")))
-                    if n >= target:
-                        break
-                    prompt = LOOKALIKE_PROMPTS[word][n % 2]
-                    prefix = f"recording_hey_{word}"
-                print(f"\n=== {word or 'positive'} ({n+1}/{target}) ===")
-                take(vad, out_dir, prefix, prompt)
 
 
 if __name__ == "__main__":
