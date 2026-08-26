@@ -1,15 +1,24 @@
 #!/usr/bin/env python
-"""Quick transcription CLI for your finetuned Cozy STT model.
+"""Cozy STT CLI — finetuned whisper-small, fully local.
 
-    .venv/bin/python scripts/infer.py --wav somefile.wav
-    .venv/bin/python scripts/infer.py --mic 5        # record 5 s and transcribe
-Prefers the CTranslate2 export; falls back to the merged HF checkpoint.
+Modes:
+    .venv/bin/python scripts/infer.py                # LIVE STREAM (default):
+                                                     # Silero VAD segments your
+                                                     # speech; each finished
+                                                     # sentence -> final text.
+    .venv/bin/python scripts/infer.py --mic 8        # one-shot take
+    .venv/bin/python scripts/infer.py --wav f.wav    # transcribe a file
+
+Engines: auto (default) = fast CTranslate2 first, HF transformers fallback
+(Hinglish-aware v4). Force with --engine ct2 | hf.
+Model loads ONCE and stays resident in stream mode.
 """
 import argparse
 import subprocess
-import wave
 import sys
 import tempfile
+import time
+import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -19,23 +28,159 @@ CT2 = OUTPUT_DIR / "cozy_stt_v1_ct2_int8"
 HF = OUTPUT_DIR / "hf_finetuned"
 
 
-def transcribe_mic(seconds: int) -> Path:
+# ------------------------------------------------------------------ engines
+class Engines:
+    """Lazy, load-once engine holders (array-based cores)."""
+
+    def __init__(self, beam=1):
+        self.beam = beam
+        self._ct2 = None
+        self._hf = None
+
+    def ct2(self):
+        if self._ct2 is None:
+            from faster_whisper import WhisperModel
+            import torch
+            assert torch.cuda.is_available(), "dGPU required: no CUDA device"
+            t0 = time.time()
+            self._ct2 = WhisperModel(str(CT2), device="cuda", device_index=0,
+                                     compute_type="int8_float16")
+            print(f"[engine] CTranslate2 loaded in {time.time()-t0:.1f}s")
+        return self._ct2
+
+    def hf(self):
+        if self._hf is None:
+            import numpy as np
+            import torch
+            from transformers import (WhisperForConditionalGeneration,
+                                      WhisperProcessor)
+            t0 = time.time()
+            self._hf_proc = WhisperProcessor.from_pretrained(str(HF))
+            self._hf = WhisperForConditionalGeneration.from_pretrained(
+                str(HF), torch_dtype=torch.float16).to("cuda").eval()
+            self._np = np
+            print(f"[engine] HF transformers loaded in {time.time()-t0:.1f}s")
+        return self._hf
+
+    def transcribe_array(self, audio_f32, engine="auto"):
+        """audio: float32 16 kHz mono. Returns (text, engine_used)."""
+        audio_f32 = audio_f32.astype("float32", copy=False)
+        if engine in ("auto", "ct2") and CT2.exists():
+            try:
+                segs, _ = self.ct2().transcribe(audio_f32, language="en",
+                                                beam_size=self.beam)
+                text = " ".join(s.text.strip() for s in segs).strip()
+                if text:
+                    return text, "ct2"
+            except Exception as e:
+                print(f"[ct2 error: {e}]", file=sys.stderr)
+        if HF.exists():
+            model = self.hf()
+            feats = self._hf_proc(audio_f32, sampling_rate=16000,
+                                  return_tensors="pt").input_features
+            feats = feats.to("cuda", torch.float16)
+            with torch.inference_mode():
+                ids = model.generate(feats, language="english",
+                                     task="transcribe", max_new_tokens=224)
+            text = self._hf_proc.batch_decode(
+                ids, skip_special_tokens=True)[0].strip()
+            return text, "hf"
+        raise RuntimeError("no usable STT model found")
+
+
+def transcribe_file(path, engines, engine="auto"):
+    import librosa
+    audio, _ = librosa.load(str(path), sr=16000, mono=True)
+    return engines.transcribe_array(audio, engine)
+
+
+# ------------------------------------------------------------- live stream
+def stream_mode(engines, engine="auto"):
+    import queue
+
+    import numpy as np
+    import sounddevice as sd
+    from silero_vad import VADIterator, load_silero_vad
+
+    print("[stream] loading Silero VAD ...")
+    vad = VADIterator(load_silero_vad(), sampling_rate=16000,
+                      threshold=0.45, min_silence_duration_ms=650,
+                      speech_pad_ms=120)
+
+    q = queue.Queue()
+
+    def cb(indata, frames, _t, _status):
+        q.put(bytes(indata))
+
+    BLOCK = 512  # 32 ms — what Silero expects @16 kHz
+    preroll_max = 12  # blocks (~0.38 s) kept before speech starts
+    preroll = []
+    speech_buf = []
+    speaking = False
+    t_start = 0.0
+
+    print("[stream] listening — speak naturally; final text prints after "
+          "each sentence. Ctrl+C to quit.")
+    warm = np.zeros(8000, dtype=np.float32)  # trigger model preload
+    try:
+        engines.transcribe_array(warm, engine)
+    except RuntimeError as e:
+        sys.exit(str(e))
+    print("[stream] ready.")
+
+    with sd.RawInputStream(samplerate=16000, blocksize=BLOCK, dtype="int16",
+                           channels=1, callback=cb):
+        try:
+            while True:
+                pcm = np.frombuffer(q.get(), dtype=np.int16)
+                chunk = pcm.astype(np.float32) / 32768.0
+                event = vad(chunk)
+
+                if not speaking:
+                    preroll.append(chunk)
+                    if len(preroll) > preroll_max:
+                        preroll.pop(0)
+                    if event and "start" in event:
+                        speaking = True
+                        t_start = time.time()
+                        speech_buf = list(preroll)
+                        preroll = []
+                        print("\r● ", end="", flush=True)
+                else:
+                    speech_buf.append(chunk)
+                    dur = time.time() - t_start
+                    print(f"\r● {dur:0.1f}s ", end="", flush=True)
+                    if (event and "end" in event) or dur > 14.0:
+                        audio = np.concatenate(speech_buf) if speech_buf \
+                            else np.zeros(1, dtype=np.float32)
+                        speech_buf = []
+                        speaking = False
+                        preroll = []
+                        print("\r" + " " * 20 + "\r", end="", flush=True)
+                        if len(audio) < 4800:      # < 0.3 s — ignore blips
+                            continue
+                        t0 = time.time()
+                        text, used = engines.transcribe_array(audio, engine)
+                        dt = time.time() - t0
+                        print(f"[{used} {dt*1000:.0f}ms] {text}")
+        except KeyboardInterrupt:
+            print("\n[stream] bye")
+
+
+# ------------------------------------------------------------------ one-shot
+def record_take(seconds: int) -> Path:
     import array
     import math
     import select
-    import time
 
     out = Path(tempfile.gettempdir()) / "cozy_mic.wav"
     sr = 16000
-    print("Speak after the countdown — recording stops ~1s after you finish "
-          f"(max {seconds}s)")
+    print(f"Speak after countdown — stops ~1s after you finish (max {seconds}s)")
     for c in range(3, 0, -1):
         print(f"  {c}...", flush=True)
         time.sleep(1)
-
-    proc = subprocess.Popen(
-        ["arecord", "-q", "-f", "S16_LE", "-r", str(sr), "-c", "1", "-t", "raw"],
-        stdout=subprocess.PIPE)
+    proc = subprocess.Popen(["arecord", "-q", "-f", "S16_LE", "-r", str(sr),
+                             "-c", "1", "-t", "raw"], stdout=subprocess.PIPE)
     frames, silent_tail, elapsed = [], 0.0, 0.0
     try:
         while True:
@@ -53,7 +198,8 @@ def transcribe_mic(seconds: int) -> Path:
                                 max(1, len(samples) // 4))
                 silent_tail = silent_tail + 0.1 if rms < 500 else 0.0
                 elapsed += 0.1
-                print(f"\r  [rec {elapsed:0.1f}s] ENTER=stop ", end="", flush=True)
+                print(f"\r  [rec {elapsed:0.1f}s] ENTER=stop ",
+                      end="", flush=True)
                 if elapsed >= 1.0 and silent_tail >= 0.9:
                     break
                 if elapsed >= seconds:
@@ -65,89 +211,40 @@ def transcribe_mic(seconds: int) -> Path:
             proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             proc.kill()
-
     buf = b"".join(frames)
     with wave.open(str(out), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(sr)
         w.writeframes(buf)
-
     all_s = array.array("h")
     all_s.frombytes(buf)
-    dur = len(all_s) / sr
     peak = max((abs(s) for s in all_s), default=0)
-    rms = math.sqrt(sum(s * s for s in all_s[::4]) / max(1, len(all_s) // 4))
     if peak >= 32000:
-        print(f"  !! input CLIPPED (peak {peak}) — lower mic gain (alsamixer)")
-    elif rms < 300 and dur > 0.5:
-        print(f"  !! very quiet (rms {rms:.0f}) — speak up / move closer")
-    print(f"  captured {dur:.1f}s -> {out}")
+        print("  !! input CLIPPED — lower mic gain (alsamixer)")
+    print(f"  captured {len(all_s)/sr:.1f}s -> {out}")
     return out
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--wav")
-    ap.add_argument("--mic", type=int, default=0, help="record N seconds from mic")
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--wav", help="transcribe an audio file")
+    ap.add_argument("--mic", type=int, default=0,
+                    help="one-shot take of N seconds")
     ap.add_argument("--beam", type=int, default=1)
+    ap.add_argument("--engine", choices=["auto", "ct2", "hf"], default="auto",
+                    help="'hf' recommended for Hinglish")
     args = ap.parse_args()
+    engines = Engines(beam=args.beam)
 
-    wav = args.wav or (transcribe_mic(args.mic) if args.mic else None)
-    if not wav:
-        sys.exit("Give --wav PATH or --mic SECONDS")
-    wav = str(wav)
+    if not args.wav and not args.mic:
+        stream_mode(engines, args.engine)   # default: live Silero-VAD stream
+        return
 
-def transcribe_ct2(wav, beam):
-    from faster_whisper import WhisperModel
-    import torch
-    assert torch.cuda.is_available(), "dGPU required: CUDA device not found"
-    model = WhisperModel(str(CT2), device="cuda", device_index=0,
-                         compute_type="int8_float16")
-    segments, _ = model.transcribe(wav, language="en", beam_size=beam,
-                                   vad_filter=True)
-    return " ".join(s.text.strip() for s in segments).strip()
-
-
-def transcribe_hf(wav):
-    import librosa
-    import torch
-    from transformers import WhisperForConditionalGeneration, WhisperProcessor
-    proc = WhisperProcessor.from_pretrained(str(HF))
-    model = WhisperForConditionalGeneration.from_pretrained(
-        str(HF), torch_dtype=torch.float16).to("cuda")
-    audio, _ = librosa.load(wav, sr=16000, mono=True)
-    feats = proc(audio, sampling_rate=16000, return_tensors="pt").to("cuda", torch.float16)
-    ids = model.generate(feats.input_features, language="english",
-                         task="transcribe", max_new_tokens=224)
-    return proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
-
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--wav")
-    ap.add_argument("--mic", type=int, default=0, help="record N seconds from mic")
-    ap.add_argument("--beam", type=int, default=1)
-    ap.add_argument("--engine", choices=["auto", "ct2", "hf"], default="auto")
-    args = ap.parse_args()
-
-    wav = args.wav or (transcribe_mic(args.mic) if args.mic else None)
-    if not wav:
-        sys.exit("Give --wav PATH or --mic SECONDS")
-    wav = str(wav)
-
-    text, engine = "", None
-    if args.engine in ("auto", "ct2") and CT2.exists():
-        text, engine = transcribe_ct2(wav, args.beam), f"ct2:{CT2.name}"
-        if not text:   # known CT2 edge case with some merged weights -> fallback
-            print("[ct2 empty, falling back to hf]", file=sys.stderr)
-            text, engine = None, None
-    if not text and HF.exists():
-        text, engine = transcribe_hf(wav), "hf_finetuned"
-    if not text:
-        sys.exit(f"No working finetuned model. Looked in {CT2} and {HF}.")
-
-    print(f"[model: {engine}]")
+    wav = args.wav or str(record_take(args.mic))
+    text, used = transcribe_file(wav, engines, args.engine)
+    print(f"[model: {used}]")
     print(text)
 
 
