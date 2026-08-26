@@ -1,0 +1,105 @@
+{"text": "Hey Cozy, what time is it right now?", "tool": {"name": "time.now", "parameters": {}}, "session": "session_1"}
+{"text": "Cozy, what's the weather like in Kolkata today?", "tool": {"name": "browser.search", "parameters": {"query": "Cozy, what's the weather like in Kolkata today"}}, "session": "session_1"}
+{"text": "Set a timer for ten minutes.", "tool": {"name": "none", "parameters": {}}, "session": "session_1"}
+{"text": "Remind me to call the bank tomorrow at eleven.", "tool": {"name": "none", "parameters": {}}, "session": "session_1"}
+{"text": "Play some soft music in the background.", "tool": {"name": "media.play", "parameters": {}}, "session": "session_1"}
+{"text": "What's on my calendar for this week?", "tool": {"name": "none", "parameters": {}}, "session": "session_1"}
+{"text": "Open the terminal and run the tests.", "tool": {"name": "app.open", "parameters": {"name": "terminal"}}, "session": "session_1"}
+{"text": "Turn down the volume a little.", "tool": {"name": "system.volume.set", "parameters": {"level": 25}}, "session": "session_1"}
+{"text": "Add milk, bread and eggs to my shopping list.", "tool": {"name": "none", "parameters": {}}, "session": "session_1"}
+{"text": "Cozy, take a note: submit the project report by Friday.", "tool": {"name": "none", "parameters": {}}, "session": "session_1"}
+{"text": "Search for the nearest coffee shop.", "tool": {"name": "browser.search", "parameters": {"query": "the nearest coffee shop"}}, "session": "session_1"}
+{"text": "What is the temperature outside right now?", "tool": {"name": "browser.search", "parameters": {"query": "What is the temperature outside right now"}}, "session": "session_1"}
+{"text": "Stop the music after this song.", "tool": {"name": "none", "parameters": {}}, "session": "session_1"}
+{"text": "Wake up cozy, we have work to do.", "tool": {"name": "none", "parameters": {}}, "session": "session_1"}
+{"text": "Goodnight cozy, shut everything down.", "tool": {"name": "none", "parameters": {}}, "session": "session_1"}
+{"text": "I need to catch the metro from Salt Lake to Howrah station.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "Book a cab to Netaji Subhas Chandra Bose International Airport.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "My friend Abhishek lives near Jayanagar in Bengaluru.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "Let's order biryani from that place near Park Street.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "The train from Howrah to Delhi Rajdhani leaves at four thirty.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "Send a message to Priya about tomorrow's meeting.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "I prefer filter coffee over masala chai in the morning.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "The GST invoice for last month hasn't arrived yet.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "We celebrated Diwali at my cousin's flat in Andheri West.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "Is the Vande Bharat express faster than the Shatabdi?", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "My PAN card and Aadhaar are in the top drawer.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "Traffic on the Eastern Metropolitan Bypass is terrible today.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "She works at an IT park in Hinjewadi, Pune.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "Let's watch the match at Eden Gardens this Sunday.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "Please recharge my phone with the two ninety nine plan.", "tool": {"name": "none", "parameters": {}}, "session": "session_2"}
+{"text": "The meeting got moved from 3:15 PM to 4:45 PM.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "My laptop has 16 gigabytes of RAM and a solid state drive.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "Call me on 98300 twelve three four five.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "The invoice total came to rupees forty two thousand five hundred.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "Python version three point one two is installed on this machine.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "Deploy the build to production on Monday, the twenty third of August.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "The Wi-Fi password is cozy dash local dash two zero two six.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "I reached eighty percent accuracy on the validation set.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "Download speed is around fifty megabits per second.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "Set an alarm for six o'clock in the morning.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "The file is exactly one point four gigabytes.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "Train the model for three epochs with batch size eight.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "Pin code seven thousand zero nine one.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "He was born on January the fifth, nineteen ninety eight.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "Reduce the learning rate to zero point zero zero zero one.", "tool": {"name": "none", "parameters": {}}, "session": "session_3"}
+{"text": "The monsoon arrived early this year, bringing relief from the summer heat.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "Reading a few pages before bed helps me sleep better than scrolling on my phone.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "The committee will review all applications before announcing the final list.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "A balanced diet and regular exercise matter more than any supplement.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "The library stays open until eight in the evening on weekdays.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "Our team finished the sprint backlog two days ahead of schedule.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "Learning to cook simple meals saves both money and time.", "tool": {"name": "time.now", "parameters": {}}, "session": "session_4"}
+{"text": "The museum has a wonderful collection of miniature paintings.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "Cycling to work keeps me active and clears my head before meetings.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "The documentary explained how coral reefs survive in warm waters.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "Every Sunday, we visit the market to buy fresh vegetables.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "The new policy allows employees to work remotely twice a week.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "His presentation on renewable energy impressed the entire panel.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "Rain water harvesting should be compulsory in every apartment complex.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "The old bookshop near the college still sells second hand novels for fifty rupees.", "tool": {"name": "none", "parameters": {}}, "session": "session_4"}
+{"text": "Yes.", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "No, wait.", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "Okay, done!", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "Hmm, let me think about it.", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "Sorry, could you repeat that?", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "Wait, stop, cancel that!", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "One more time, slower please.", "tool": {"name": "time.now", "parameters": {}}, "session": "session_5"}
+{"text": "What?! Are you serious?", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "Hi cozy, good morning!", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "Thanks, that's all for now.", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "E-mail me the report at saptodeep dot dev at gmail dot com.", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "It's Dr. Sharma's appointment at St. John's hospital, Room no. 204.", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "\"Quote me the price,\" he said, \"including GST and delivery.\"", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "The recipe needs 250g flour, 2 eggs, 1 tsp baking powder, and a pinch of salt.", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "Cozy, remind me: mom's birthday gift, dad's medicines, and my passport renewal.", "tool": {"name": "none", "parameters": {}}, "session": "session_5"}
+{"text": "Arre cozy, why did you mute yourself again?", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "I don't know yaar, maybe we should just order in tonight.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Actually wait, cancel my previous instruction.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "You know what, just play something chill.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Bas, that's enough work for today.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Could you kindly repeat the last part?", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "I'll be home by eight-ish, start the geyser at seven forty five.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Tell me honestly, does this accent confuse you?", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "One second, someone's at the door.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Okay listen carefully, this is important: back up the projects folder first.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Thoda loud please, I can't hear you properly.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Great job cozy, you're getting better at this.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Ugh, the internet is crawling again today.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Let me spell it: S-A-P-T-O-D-E-E-P.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Alright, that's a wrap for this session.", "tool": {"name": "none", "parameters": {}}, "session": "session_6"}
+{"text": "Cozy, aaj ka weather kaisa hai?", "tool": {"name": "browser.search", "parameters": {"query": "Cozy, aaj ka weather kaisa hai"}}, "session": "session_7"}
+{"text": "Ek minute yaar, hold on.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Accha, so what's the plan for tomorrow?", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Koi nahi, next time try kar lena.", "tool": {"name": "time.now", "parameters": {}}, "session": "session_7"}
+{"text": "Mujhe lagta hai meeting cancel ho gayi.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Cozy, thoda volume badha do please.", "tool": {"name": "system.volume.set", "parameters": {"level": 75}}, "session": "session_7"}
+{"text": "Ye file delete karo, but recycle bin mein daalna.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Arre wah, that's great news!", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Chalo, order some biryani tonight.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Cozy, mera schedule check karo na.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Hmm, theek hai, five more minutes.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Yaar, yeh internet phir se slow ho gaya.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Reminder set karo: papa ko call karna hai.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Arey nahi nahi, woh galti se ho gaya.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}
+{"text": "Cozy, lights off karo and good night bol do.", "tool": {"name": "none", "parameters": {}}, "session": "session_7"}

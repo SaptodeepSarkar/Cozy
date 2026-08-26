@@ -7,3 +7,8 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 export CUDA_DEVICE_ORDER=FASTEST_FIRST
 export TOKENIZERS_PARALLELISM=false
+
+# --- FULLY LOCAL: never touch the network at train/inference time ---
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1

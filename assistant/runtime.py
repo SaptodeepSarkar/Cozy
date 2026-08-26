@@ -40,19 +40,28 @@ def load_wake(threshold):
 
 
 def load_stt():
-    from faster_whisper import WhisperModel
+    # stt-agent's dual-engine wrapper: fast CT2 (v1, English) with automatic
+    # transformers-HF (v4, Hinglish-aware) fallback when CT2 returns empty.
+    from stt import CozySTT
 
+    wrapper = CozySTT()
     ct2 = HERE.parent / "stt-finetune" / "output" / "cozy_stt_v1_ct2_int8"
-    if ct2.exists():
-        print("[stt] CTranslate2 model", ct2.name)
-        return WhisperModel(str(ct2), device="cuda",
-                            compute_type="int8_float16")
     hf = HERE.parent / "stt-finetune" / "output" / "hf_finetuned"
-    if hf.exists():
-        print("[stt] HF fallback", hf.name)
-        return WhisperModel(str(hf), device="cuda",
-                            compute_type="float16")
-    raise SystemExit("no STT model found - ask the stt-agent")
+    if not (ct2.exists() or hf.exists()):
+        raise SystemExit("no STT model found - ask the stt-agent")
+
+    class _Segment:
+        def __init__(self, text):
+            self.text = text
+
+    class _Adapter:
+        """Mimics faster-whisper transcribe() -> (segments, info) API."""
+        def transcribe(self, path, language="en", beam_size=1):
+            text = wrapper.transcribe_file(path)
+            return [_Segment(text)], None
+
+    print("[stt] CozySTT dual-engine (fast-ct2 / hinglish-hf fallback)")
+    return _Adapter()
 
 
 def load_llm():
