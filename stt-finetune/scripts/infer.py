@@ -64,12 +64,19 @@ class Engines:
         return self._hf
 
     def warmup(self, engine="auto"):
-        """Preload every relevant engine BEFORE the user starts speaking."""
+        """Preload every relevant engine BEFORE the user starts speaking.
+        Tolerates per-engine failures (e.g. CUDA OOM while another process
+        trains) - that engine simply stays unloaded until first use."""
         import numpy as np
         z = np.zeros(8000, dtype=np.float32)   # 0.5 s of silence
         if engine in ("auto", "ct2") and CT2.exists():
-            m = self.ct2()
-            next(iter(m.transcribe(z, language="en", beam_size=1)), None)
+            try:
+                m = self.ct2()
+                next(iter(m.transcribe(z, language="en", beam_size=1)), None)
+            except Exception as e:
+                print(f"[engine] ct2 unavailable ({e}); will rely on hf",
+                      file=sys.stderr)
+                self._ct2 = None
         if engine in ("auto", "hf") and HF.exists():
             model = self.hf()
             feats = self._hf_proc(z, sampling_rate=16000,
@@ -85,8 +92,11 @@ class Engines:
         audio_f32 = audio_f32.astype("float32", copy=False)
         if engine in ("auto", "ct2") and CT2.exists():
             try:
-                segs, _ = self.ct2().transcribe(audio_f32, language="en",
-                                                beam_size=self.beam)
+                segs, _ = self.ct2().transcribe(
+                    audio_f32, language="en", beam_size=self.beam,
+                    initial_prompt="Cozy assistant. Romanized Hindi words: "
+                                   "aaj kaisa karo yaar accha theek thoda "
+                                   "nahi bas arre.")
                 text = " ".join(s.text.strip() for s in segs).strip()
                 if text:
                     return text, "ct2"
@@ -113,7 +123,7 @@ def transcribe_file(path, engines, engine="auto"):
 
 
 # ------------------------------------------------------------- live stream
-def stream_mode(engines, engine="auto"):
+def stream_mode(engines, engine="auto", max_len=60.0):
     import queue
 
     import numpy as np
@@ -164,7 +174,7 @@ def stream_mode(engines, engine="auto"):
                     speech_buf.append(chunk)
                     dur = time.time() - t_start
                     print(f"\r● {dur:0.1f}s ", end="", flush=True)
-                    if (event and "end" in event) or dur > 14.0:
+                    if (event and "end" in event) or dur > max_len:
                         audio = np.concatenate(speech_buf) if speech_buf \
                             else np.zeros(1, dtype=np.float32)
                         speech_buf = []
@@ -247,13 +257,15 @@ def main():
     ap.add_argument("--mic", type=int, default=0,
                     help="one-shot take of N seconds")
     ap.add_argument("--beam", type=int, default=1)
+    ap.add_argument("--max-len", type=float, default=60.0,
+                    help="force-flush an utterance after this many seconds")
     ap.add_argument("--engine", choices=["auto", "ct2", "hf"], default="auto",
                     help="'hf' recommended for Hinglish")
     args = ap.parse_args()
     engines = Engines(beam=args.beam)
 
     if not args.wav and not args.mic:
-        stream_mode(engines, args.engine)   # default: live Silero-VAD stream
+        stream_mode(engines, args.engine, args.max_len)  # default: live stream
         return
 
     wav = args.wav or str(record_take(args.mic))

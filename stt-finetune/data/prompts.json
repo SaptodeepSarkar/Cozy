@@ -154,6 +154,25 @@
         "Arey nahi nahi, woh galti se ho gaya.",
         "Cozy, lights off karo and good night bol do."
       ]
+    },
+    {
+      "id": 8,
+      "name": "pure_hindi_romanized",
+      "title": "PURE Hindi speech (we will train romanized output \u2014 speak naturally in Hindi)",
+      "lines": [
+        "Mujhe bhookh lag rahi hai, kuch order karte hain.",
+        "Bahut garmi hai aaj, AC chala do please.",
+        "Kal subah jaldi uthna hai, alarm laga do.",
+        "Yeh kaam abhi baad mein karenge, pehle chai piyo.",
+        "Mera phone kahan hai, dhundo zara.",
+        "Station pahunchne mein kitna time lagega?",
+        "Aaj ka din bahut achha tha, shukriya cozy.",
+        "Thoda ruk jao, main abhi aata hoon.",
+        "Barish ho rahi hai, chhata le jao.",
+        "Mummy ko bol do main ghar aa raha hoon.",
+        "Yeh movie bahut boring thi, band karo.",
+        "Subah walk ke liye paanch baje utha dena."
+      ]
     }
   ]
 }
