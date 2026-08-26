@@ -161,9 +161,10 @@ def main():
                          daemon=True).start()
     else:
         import sounddevice as sd
+        # sounddevice starts on enter; the "with" context opens the stream
         sd.RawInputStream(samplerate=16000, blocksize=512, dtype="int16",
                           channels=1, callback=lambda i, f, t, s:
-                          q.put(bytes(i)), start=True)
+                          q.put(bytes(i)))
 
     worker = threading.Thread(target=audio_worker,
                               args=(q, engines, args.engine, args.max_len),
