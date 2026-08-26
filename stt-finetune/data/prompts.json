@@ -172,7 +172,8 @@
         "Mummy ko bol do main ghar aa raha hoon.",
         "Yeh movie bahut boring thi, band karo.",
         "Subah walk ke liye paanch baje utha dena."
-      ]
+      ],
+      "manual_only": true
     },
     {
       "id": 9,

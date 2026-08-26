@@ -45,8 +45,8 @@ def save_progress(session_dir: Path, st: dict):
     (session_dir / "state.json").write_text(json.dumps(st, indent=1))
 
 
-def record_take(threshold=RMS_SIL) -> tuple[Path | None, float]:
-    """Record until silence/max. Returns (wav_path, peak_rms)."""
+def record_take(threshold=RMS_SIL, manual_only=False) -> tuple[Path | None, float]:
+    """Record until silence/max (or Enter if manual_only). Returns (wav_path, peak_rms)."""
     cmd = ["arecord", "-q", "-f", "S16_LE", "-r", str(SR), "-c", "1", "-t", "raw"]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     frames = []
@@ -54,7 +54,10 @@ def record_take(threshold=RMS_SIL) -> tuple[Path | None, float]:
     silent_tail = 0.0
     chunk_n = SR // 10  # 100 ms
     elapsed = 0.0
-    print("    [recording] press ENTER to stop, or wait for silence...", end="", flush=True)
+    if manual_only:
+        print("    [recording] press ENTER to stop (no auto-stop) ...", end="", flush=True)
+    else:
+        print("    [recording] press ENTER to stop, or wait for silence...", end="", flush=True)
     try:
         while True:
             # manual stop: any Enter pressed mid-recording ends the take
@@ -74,14 +77,19 @@ def record_take(threshold=RMS_SIL) -> tuple[Path | None, float]:
             frames.append(samples.tobytes())
             elapsed += 0.1
             if int(elapsed * 10) % 10 == 0:
-                print(f"\r    [recording {elapsed:0.0f}s] ENTER=stop / silence stops it ",
-                      end="", flush=True)
-            if rms < threshold:
-                silent_tail += 0.10
-                if len(frames) > 5 and silent_tail >= SILENCE_SEC:
-                    break
-            else:
-                silent_tail = 0.0
+                if manual_only:
+                    print(f"\r    [recording {elapsed:0.0f}s] ENTER=stop ",
+                          end="", flush=True)
+                else:
+                    print(f"\r    [recording {elapsed:0.0f}s] ENTER=stop / silence stops it ",
+                          end="", flush=True)
+            if not manual_only:
+                if rms < threshold:
+                    silent_tail += 0.10
+                    if len(frames) > 5 and silent_tail >= SILENCE_SEC:
+                        break
+                else:
+                    silent_tail = 0.0
             total = sum(len(f) for f in frames) / 2 / SR
             if total >= MAX_SEC:
                 break
@@ -140,17 +148,23 @@ def mic_check():
         sys.exit("Fix the mic (pactl set-source-mute @DEFAULT_SOURCE@ 0 / alsamixer), then rerun.")
 
 
-def run_session(sess: dict, threshold):
+def run_session(sess: dict, threshold, manual_only=False):
     sid = sess["id"]
     sdir = REC_DIR / f"session_{sid}"
     sdir.mkdir(parents=True, exist_ok=True)  # exists before first os.replace
     st = load_progress(sdir)
     lines = sess["lines"]
+    # session-config flag wins unless CLI explicitly forced (manual_only
+    # argument passed true overrides False from config if explicitly set)
+    manual = bool(manual_only) or sess.get("manual_only", False)
     todo = [i for i in range(len(lines))
             if str(i) not in st["done"] and i not in st["skipped"]]
     print(f"\n=== Session {sid}: {sess['title']} ===")
+    mode_str = "MANUAL only (press ENTER to stop)" if manual else \
+               "auto-stop on silence"
     print(f"    {len(todo)} of {len(lines)} lines remaining "
-          f"({len(st['done'])} kept, {len(st['skipped'])} skipped)")
+          f"({len(st['done'])} kept, {len(st['skipped'])} skipped) | "
+          f"mode: {mode_str}")
     if not todo:
         print("Session complete! Run again without --session for the next one.")
         return
@@ -158,14 +172,19 @@ def run_session(sess: dict, threshold):
     for idx in todo:
         text = lines[idx]
         print(f"\n[{idx + 1}/{len(lines)}]  >>> {text}")
-        print("    Speak now — press ENTER when you finish (or it auto-stops on silence)")
-        take, peak = record_take(threshold)
+        if manual:
+            print("    Speak now — press ENTER when done (no auto-stop)")
+        else:
+            print("    Speak now — press ENTER when you finish "
+                  "(or it auto-stops on silence)")
+        take, peak = record_take(threshold, manual_only=manual)
         dur = wave.open(str(take)).getnframes() / SR
-        if peak < RMS_SIL or dur < 0.3:
+        if not manual and (peak < RMS_SIL or dur < 0.3):
             print("    !! too quiet or empty - retake automatically")
             take, peak = record_take(threshold)
             dur = wave.open(str(take)).getnframes() / SR
-        print(f"    got {dur:.1f}s (level {peak:.0f})  [Enter]=keep r=retry p=play s=skip q=quit")
+        print(f"    got {dur:.1f}s (level {peak:.0f})  "
+              f"[Enter]=keep r=retry p=play s=skip q=quit")
         while True:
             c = input("    > ").strip().lower()
             if c == "":
@@ -175,7 +194,7 @@ def run_session(sess: dict, threshold):
                 st["done"][str(idx)] = final.name
                 break
             if c == "r":
-                take, _ = record_take(threshold)
+                take, _ = record_take(threshold, manual_only=manual)
                 dur = wave.open(str(take)).getnframes() / SR
                 print(f"    new take {dur:.1f}s  [Enter]=keep r=retry p=play s=skip")
             elif c == "p":
@@ -198,18 +217,25 @@ def main():
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--threshold", type=float, default=RMS_SIL,
                     help="silence RMS cutoff (raise if takes never stop)")
+    ap.add_argument("--manual-only", action="store_true",
+                    help="only stop recording when you press ENTER "
+                         "(no silence auto-stop, no auto-retry on quiet). "
+                         "Auto-enabled for sessions that declare manual_only "
+                         "in data/prompts.json (e.g. session 8 pure Hindi).")
     args = ap.parse_args()
     data = json.loads(PROMPTS.read_text())
     if args.list:
         for s in data["sessions"]:
             done = len(load_progress(REC_DIR / f"session_{s['id']}")["done"])
-            print(f"  session {s['id']}: {s['title']} [{done}/{len(s['lines'])} recorded]")
+            tag = " [manual-only]" if s.get("manual_only") else ""
+            print(f"  session {s['id']}: {s['title']} "
+                  f"[{done}/{len(s['lines'])} recorded]{tag}")
         return
     REC_DIR.mkdir(exist_ok=True)
     mic_check()
     if args.session:
         sess = next(s for s in data["sessions"] if s["id"] == args.session)
-        run_session(sess, args.threshold)
+        run_session(sess, args.threshold, manual_only=args.manual_only)
     else:
         for sess in data["sessions"]:
             sdir = REC_DIR / f"session_{sess['id']}"
@@ -217,7 +243,7 @@ def main():
             remaining = [i for i in range(len(sess["lines"]))
                          if str(i) not in st["done"] and i not in st["skipped"]]
             if remaining:
-                run_session(sess, args.threshold)
+                run_session(sess, args.threshold, manual_only=args.manual_only)
                 break
         else:
             print("All sessions complete!")
