@@ -173,6 +173,28 @@
         "Yeh movie bahut boring thi, band karo.",
         "Subah walk ke liye paanch baje utha dena."
       ]
+    },
+    {
+      "id": 9,
+      "name": "hinglish_tech_v2",
+      "title": "Hinglish \u00d7 Tech (dev words, apps, travel \u2014 fixes GitHub/push/hoon errors)",
+      "lines": [
+        "Cozy, mera code GitHub pe push kar de.",
+        "Ye branch delete karo aur naya commit banao.",
+        "Terminal kholo aur tests run karo please.",
+        "Mujhe Stack Overflow pe ye error search karne hai.",
+        "VS Code mein projects folder open kar do.",
+        "Ek PR merge karna hai, review ke baad.",
+        "Laptop ka brightness thoda kam karo yaar.",
+        "Alarm laga do subah paanch bayees minute ka.",
+        "Mujhe kal Bangalore jaana hai, flight book karo.",
+        "Karnataka express kitne baje nikalti hai?",
+        "Cozy, ek reminder set kar \u2014 pandrahe minute mein break.",
+        "Server pe deploy karna hai shaam ko, yaad rakhna.",
+        "Mera hoon wala feel aa nahi raha, tum bolo kaisa lag raha hai?",
+        "GPU load zyada hai, training chal rahi hai background mein.",
+        "Sab kuch backup ho gaya na? Achha suno, good night cozy."
+      ]
     }
   ]
 }

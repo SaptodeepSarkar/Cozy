@@ -64,3 +64,14 @@ python3 scripts/record_voice.py --list     # progress overview
 - Re-run `prepare_data.py` any time you add recordings, then retrain.
 - The CTranslate2 export plugs straight into the Cozy roadmap's listener daemon:
   `WhisperModel("output/cozy_stt_v1_ct2_int8", compute_type="int8_float16")`.
+
+## Optional: whisper.cpp fast runtime
+
+The GGML/whisper.cpp path is experimental for this model (see channel notes).
+To rebuild the tooling locally:
+
+    cd stt-finetune/third_party
+    git clone --depth 1 https://github.com/ggml-org/whisper.cpp
+    git clone --depth 1 https://github.com/openai/whisper openai-whisper
+    cmake -S whisper.cpp -B whisper.cpp/build -DGGML_CUDA=1 && \
+      cmake --build whisper.cpp/build --target whisper-cli -j 8
