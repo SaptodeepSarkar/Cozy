@@ -205,7 +205,9 @@ def build_dataset(fe, rng, limit=0):
 
     pos_tr, pos_va = split_clips(positive, val_frac)
     # emphasize the deployment microphone: repeat user's real takes x3
-    user_real_tr = [c for c in pos_tr if "synth" not in c.name]
+    # (real takes live under data/, synth under work/)
+    user_real_tr = [c for c in pos_tr
+                    if str(c).startswith(str(HERE / "data"))]
     pos_tr = pos_tr + user_real_tr * 2
     sim_tr, sim_va = split_clips(similar, val_frac)
     neg_tr, neg_va = split_clips(negative, val_frac)

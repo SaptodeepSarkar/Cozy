@@ -7,6 +7,7 @@ Prefers the CTranslate2 export; falls back to the merged HF checkpoint.
 """
 import argparse
 import subprocess
+import wave
 import sys
 import tempfile
 from pathlib import Path
@@ -19,9 +20,69 @@ HF = OUTPUT_DIR / "hf_finetuned"
 
 
 def transcribe_mic(seconds: int) -> Path:
+    import array
+    import math
+    import select
+    import time
+
     out = Path(tempfile.gettempdir()) / "cozy_mic.wav"
-    subprocess.run(["arecord", "-q", "-d", str(seconds), "-f", "S16_LE",
-                    "-r", "16000", "-c", "1", str(out)], check=True)
+    sr = 16000
+    print("Speak after the countdown — recording stops ~1s after you finish "
+          f"(max {seconds}s)")
+    for c in range(3, 0, -1):
+        print(f"  {c}...", flush=True)
+        time.sleep(1)
+
+    proc = subprocess.Popen(
+        ["arecord", "-q", "-f", "S16_LE", "-r", str(sr), "-c", "1", "-t", "raw"],
+        stdout=subprocess.PIPE)
+    frames, silent_tail, elapsed = [], 0.0, 0.0
+    try:
+        while True:
+            r, _, _ = select.select([sys.stdin], [], [], 0)
+            if r and sys.stdin.read(1) == "\n":
+                break
+            raw = proc.stdout.read(sr // 10 * 2)
+            if not raw:
+                break
+            samples = array.array("h")
+            samples.frombytes(raw)
+            if len(samples):
+                frames.append(samples.tobytes())
+                rms = math.sqrt(sum(s * s for s in samples[::4]) /
+                                max(1, len(samples) // 4))
+                silent_tail = silent_tail + 0.1 if rms < 500 else 0.0
+                elapsed += 0.1
+                print(f"\r  [rec {elapsed:0.1f}s] ENTER=stop ", end="", flush=True)
+                if elapsed >= 1.0 and silent_tail >= 0.9:
+                    break
+                if elapsed >= seconds:
+                    break
+    finally:
+        print()
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    buf = b"".join(frames)
+    with wave.open(str(out), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(buf)
+
+    all_s = array.array("h")
+    all_s.frombytes(buf)
+    dur = len(all_s) / sr
+    peak = max((abs(s) for s in all_s), default=0)
+    rms = math.sqrt(sum(s * s for s in all_s[::4]) / max(1, len(all_s) // 4))
+    if peak >= 32000:
+        print(f"  !! input CLIPPED (peak {peak}) — lower mic gain (alsamixer)")
+    elif rms < 300 and dur > 0.5:
+        print(f"  !! very quiet (rms {rms:.0f}) — speak up / move closer")
+    print(f"  captured {dur:.1f}s -> {out}")
     return out
 
 
