@@ -87,6 +87,13 @@ def main() -> None:
     )
     trainer.train()
 
+    # save the SMALL adapter first (committable to git)
+    adapter_dir = HERE / "model" / "cozy-llm-v1-adapter"
+    adapter_dir.mkdir(parents=True, exist_ok=True)
+    trainer.model.save_pretrained(str(adapter_dir))
+    tok.save_pretrained(str(adapter_dir))
+    print("saved adapter ->", adapter_dir)
+
     merged = trainer.model.merge_and_unload()
     OUT.mkdir(parents=True, exist_ok=True)
     merged.save_pretrained(str(OUT))
