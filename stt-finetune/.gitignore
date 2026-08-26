@@ -9,3 +9,4 @@ checkpoints/
 output/
 __pycache__/
 *.pyc
+stt-finetune/third_party/
