@@ -23,19 +23,52 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 WW = HERE.parent / "wakeword"
-CHUNK = 1280
+SR = 16000
+CHUNK = 1280  # 80 ms - audio capture granularity
+WIN_SAMPLES = SR * 2  # 2 seconds - livekit-wakeword inference window
+
+# Auto-detect the wakeword venv site-packages and add to sys.path.
+# This lets the assistant runtime find livekit-wakeword regardless of
+# which Python is used to launch it. We check for the .venv at:
+#   <Cozy>/.venv/   (project-level venv)
+#   <wakeword>/.venv/  (wakeword venv)
+# The wakeword venv has livekit-wakeword installed (the assistant venv
+# is currently empty).
+for venv_candidate in [WW.parent / ".venv", WW / ".venv"]:
+    sp = venv_candidate / "lib"
+    if sp.exists():
+        for sub in sp.iterdir():
+            if sub.is_dir() and sub.name.startswith("python"):
+                candidate = sub / "site-packages"
+                if candidate.exists() and str(candidate) not in sys.path:
+                    sys.path.insert(0, str(candidate))
+                    break
+# Also add wakeword itself for in-tree imports
+if str(WW) not in sys.path:
+    sys.path.insert(0, str(WW))
 
 
 # ------------------------------------------------------------------ loading
 def load_wake(threshold):
-    sys.path.insert(0, str(WW))
-    from openwakeword.model import Model
+    """Load the livekit-wakeword model for hey_cozy.
 
-    model_path = WW / "models" / "cozy_v1.onnx"
-    m = Model(wakeword_models=[str(model_path)],
-              inference_framework="onnx")
-    name = next(iter(m.models.keys()))
-    print("[wake] loaded", name, "threshold", threshold)
+    The model is a small ONNX (122 KB) that takes a 2-second 16kHz int16
+    audio window and returns a wake-word score in [0, 1]. Trained on 138
+    user-voice positives + 500 synth positives + 2568 negatives.
+    """
+    from livekit.wakeword import WakeWordModel
+    model_path = WW / "output" / "hey_cozy" / "hey_cozy.onnx"
+    if not model_path.exists():
+        raise SystemExit(
+            f"wake model not found: {model_path}\n"
+            f"train it first:\n"
+            f"  cd {WW}\n"
+            f"  uv run livekit-wakeword setup --config configs/hey_cozy_test.yaml --skip-acav\n"
+            f"  uv run livekit-wakeword run configs/hey_cozy_test.yaml"
+        )
+    m = WakeWordModel(models=[model_path])
+    name = next(iter(m._classifiers.keys()))
+    print(f"[wake] loaded livekit-wakeword model '{name}' threshold={threshold}")
     return m, name, threshold
 
 
@@ -193,15 +226,20 @@ def main() -> None:
                         help="print live wake scores for 30 s")
     args = parser.parse_args()
 
-    metrics_file = WW / "models" / "metrics.json"
+    # Default threshold comes from the trained model's eval JSON
+    # (AUT/FPPH/recall-optimal threshold computed during livekit training)
+    metrics_file = WW / "output" / "hey_cozy" / "hey_cozy_eval.json"
     threshold = args.threshold
     if threshold is None:
-        threshold = 0.5
+        threshold = 0.30  # tuned default for the user-voice-trained model
         if metrics_file.exists():
             try:
                 metrics = json.loads(metrics_file.read_text())
-                threshold = float(metrics.get("safe_threshold_zero_fpr",
-                                              0.5))
+                # prefer the eval-optimal threshold (best FPPH/recall tradeoff)
+                if metrics.get("optimal_threshold"):
+                    threshold = float(metrics["optimal_threshold"])
+                elif metrics.get("threshold"):
+                    threshold = float(metrics["threshold"])
             except Exception:
                 pass
     print("[config] threshold =", threshold)
@@ -228,16 +266,31 @@ def main() -> None:
     if args.calibrate:
         m, name, thr = wake_tuple
         print("Calibrating 30s - say 'hey cozy' and other stuff...")
+        q2 = queue.Queue()
+
+        def cb2(indata, _f, _t, _s):
+            q2.put(indata.copy())
+
+        audio_buf2 = np.zeros(WIN_SAMPLES, dtype=np.int16)
         with sd.InputStream(samplerate=16000, channels=1, dtype="int16",
-                            blocksize=CHUNK):
+                            blocksize=CHUNK, callback=cb2):
             end = time.time() + 30
             while time.time() < end:
-                time.sleep(0.25)
-                buf = list(m.prediction_buffer[name])
-                recent = buf[-5:]
-                bar = "#" * int(max(recent or [0]) * 40)
-                print("\r" + bar.ljust(42)
-                      + format(max(recent or [0]), ".3f"),
+                try:
+                    chunk = q2.get(timeout=0.25)
+                except queue.Empty:
+                    continue
+                chunk = chunk[:, 0].astype(np.int16)
+                n = len(chunk)
+                audio_buf2 = np.roll(audio_buf2, -n)
+                audio_buf2[-n:] = chunk
+                if audio_buf2.shape[0] < WIN_SAMPLES:
+                    continue
+                scores = m.predict(audio_buf2.copy())
+                score = float(scores[name])
+                bar = "#" * int(min(score, 1.0) * 40)
+                fired = " <-- WAKE" if score >= thr else ""
+                print(f"\r{bar.ljust(40)} {score:.3f} (thr {thr}){fired}    ",
                       end="", flush=True)
         print()
         return
@@ -249,6 +302,10 @@ def main() -> None:
     def audio_cb(indata, _f, _t, _s):
         q.put(indata.copy())
 
+    # Rolling 2s buffer for livekit-wakeword (model needs >=2s per inference)
+    audio_buf = np.zeros(WIN_SAMPLES, dtype=np.int16)
+    audio_buf_fill = 0
+
     with sd.InputStream(samplerate=16000, channels=1, dtype="int16",
                         blocksize=CHUNK, callback=audio_cb):
         while True:
@@ -256,21 +313,35 @@ def main() -> None:
                 chunk = q.get(timeout=1.0)
             except queue.Empty:
                 continue
-            chunk = chunk[:, 0]
+            chunk = chunk[:, 0].astype(np.int16)
+
+            # Update the rolling 2s buffer
+            n = len(chunk)
+            audio_buf = np.roll(audio_buf, -n)
+            audio_buf[-n:] = chunk
+            audio_buf_fill = min(WIN_SAMPLES, audio_buf_fill + n)
+            if audio_buf_fill < WIN_SAMPLES:
+                continue  # not enough audio yet
 
             if wake_tuple is not None:
                 m, name, thr = wake_tuple
-                score = float(m.predict(chunk)[name])
+                # livekit-wakeword's predict takes a 2s window; it returns
+                # {model_name: score} for that window
+                scores = m.predict(audio_buf.copy())
+                score = float(scores[name])
                 if score < thr or time.time() < cooldown_until:
                     continue
                 cooldown_until = time.time() + 4.0
-                print("\a[wake] cozy! (score", format(score, ".2f") + ")")
+                print(f"\a[wake] {name}! (score {score:.3f}, thr {thr})")
 
             text, wav = record_command(stt)
             print("[heard]", text or "(silence)")
             if text:
                 handle_text(text, tok, llm,
                             lambda o: None)
+            # Reset the rolling buffer so we don't re-process the wake audio
+            audio_buf[:] = 0
+            audio_buf_fill = 0
 
 
 if __name__ == "__main__":
