@@ -1,69 +1,158 @@
 # Cozy 🎙️
 
-**Cozy** is a local, private, voice-controlled assistant. Say the word **"cozy"**
-and your PC (and your AI agents) come alive.
+A local, private, voice-controlled assistant. Say **"hey cozy"** and your PC
+(and your AI agents) come alive — fully offline, no cloud calls.
 
-This repository currently ships the foundation layer:
+## Components
 
-- **wakeword/** — a complete, reproducible pipeline that trains a custom
-  wake-word model for the word *"cozy"* using synthetic multi-speaker TTS data
-  ([Piper](https://github.com/rhasspy/piper-sample-generator)) and
-  [openWakeWord](https://github.com/dscripka/openWakeWord)-style feature
-  extraction. One command downloads every model, builds the dataset, trains
-  the detector and exports it to ONNX.
+| Folder | Purpose | Venv |
+|---|---|---|
+| `wakeword/` | "hey cozy" detection (livekit-wakeword v0.2.0) | `wakeword/.venv` |
+| `stt-finetune/` | Speech-to-text (Whisper-small LoRA, Hinglish-aware) | `stt-finetune/.venv` |
+| `assistant/` | Voice assistant runtime: wake → STT → LLM → executor | `assistant/.venv` |
+| `team/` | Multi-agent notes, training scripts, status board | (no venv) |
 
-## Repository layout
+## Quick start
 
-    Cozy/
-    ├── wakeword/                  <- wake-word training pipeline
-    │   ├── config.yaml            <- words, counts, hyperparameters
-    │   ├── setup.sh               <- creates venv + installs everything
-    │   ├── download_models.py     <- downloads TTS voices + feature models
-    │   ├── generate_data.py       <- synthesizes all training audio
-    │   ├── train_wakeword.py      <- trains + exports models/cozy_v1.onnx
-    │   ├── record_samples.py      <- record YOUR voice into data/cozy
-    │   ├── test_model.py          <- live microphone / WAV testing
-    │   ├── run_all.sh             <- one command: download -> data -> train
-    │   ├── models/                <- trained artifacts land here (committed)
-    │   └── data/
-    │       ├── cozy/              <- recordings of the word "cozy"   (positives)
-    │       └── similar/           <- recordings of similar sounds  (hard negatives)
-    └── assistant/                 <- (roadmap) the brain that listens and controls
+```bash
+# One-shot setup (creates all three venvs, ~5-10 min, ~3 GB disk)
+bash setup.sh
 
-## Quickstart
+# Talk to Cozy
+bash run.sh                 # full voice loop
+bash run.sh --text          # type commands instead
+bash run.sh --no-wake       # skip wake gate
+bash run.sh --calibrate     # print live wake scores for 30s
+bash run.sh --threshold 0.50
+```
 
-    git clone https://github.com/SaptodeepSarkar/Cozy.git
-    cd Cozy/wakeword
-    bash setup.sh            # one-time: venv + PyTorch + dependencies
-    bash run_all.sh smoke    # ~10 min end-to-end sanity check
-    bash run_all.sh full     # full dataset (≈18k clips) + real training
+## Architecture
 
-Then speak to your machine:
+```
+                     ┌──────────────┐
+                     │  microphone   │
+                     └──────┬───────┘
+                            │ 16 kHz int16
+                            ▼
+                  ┌──────────────────────┐
+                  │  wakeword (livekit)  │  hey_cozy.onnx (122 KB)
+                  │  2s window -> score  │  AUT 0.020, FPPH 1.66, Recall 69%
+                  └──────────┬───────────┘
+                             │  score >= 0.30
+                             ▼
+                  ┌──────────────────────┐
+                  │   STT (faster-whisper)│  whisper-small LoRA v3
+                  │  CT2 int8 (CUDA)      │  9.92% WER on user-holdout
+                  └──────────┬───────────┘
+                             │  text
+                             ▼
+                  ┌──────────────────────┐
+                  │   LLM (Qwen3-0.6B)    │  LoRA r=16, alpha=32
+                  │  + tool-call schema  │  15 tools
+                  └──────────┬───────────┘
+                             │  tool call
+                             ▼
+                  ┌──────────────────────┐
+                  │   executor (Python)  │  system.volume.set, app.open,
+                  │                       │  browser.search, screenshot.take,
+                  │                       │  time.now, agent skills, ...
+                  └──────────────────────┘
+```
 
-    python test_model.py --mic          # say "cozy"
-    python record_samples.py --num 20   # teach it your voice (recommended)
+## Models shipped in this repo
 
-## How the model learns "all aspects" of the word
+| Model | Path | Size | Trained on |
+|---|---|---|---|
+| **hey_cozy** wake word | `wakeword/output/hey_cozy/hey_cozy.onnx` | 122 KB | 138 user-voice + 500 synth Piper positives, 2568 negatives |
+| **hey_cozy** PyTorch | `wakeword/output/hey_cozy/hey_cozy.pt` | 104 KB | (same) |
+| Whisper-small LoRA v3 (CT2) | `stt-finetune/output/cozy_stt_v1_ct2_int8/` | ~80 MB | user recordings + Indian English corpora |
+| Whisper-small LoRA v3 (HF) | `stt-finetune/output/hf_finetuned/` | ~310 MB | (same) |
+| Qwen3-0.6B base | `assistant/model/cozy-llm-v1/` | 1.2 GB | base from HuggingFace |
+| Qwen3-0.6B LoRA adapter | `assistant/model/cozy-llm-v1-adapter/` | 40 MB | 1.4 k function-call samples |
 
-| Folder          | Role                                                        |
-| --------------- | ----------------------------------------------------------- |
-| data/cozy     | Real + synthetic recordings of **"cozy"** (incl. the British spelling *cosy*) |
-| data/similar  | Confusable words — *nosy, rosy, Josie, Ozzie, dozy, posy, noisy* … so the model learns what is **not** cozy |
+## Current state (v1.49)
 
-On top of that, generate_data.py synthesizes thousands of everyday
-sentences that must never trigger, so the detector stays quiet during
-normal conversation.
+- ✅ **Wake word** — `hey_cozy` model, AUT 0.020, FPPH 1.66, Recall 69% (user-voice trained)
+- ✅ **STT** — whisper-small + LoRA v3, 9.92% WER on user-holdout
+- ✅ **LLM** — Qwen3-0.6B + LoRA function-calling SFT
+- ✅ **Assistant** — runtime wires wake → STT → LLM → executor end-to-end
+- ✅ **All venvs set up** — one-command install via `bash setup.sh`
+- 🚧 **Executor** — basic system tools; agent skills stubbed
 
-## Roadmap — the full Cozy assistant
+## Folder layout
 
-1. Listener daemon: wake word -> faster-whisper STT -> intent router
-2. Agent bridge: route commands to local coding agents (e.g. DSH sessions)
-3. PC control: app launching, media, keyboard/mouse, smart-home hooks
-4. Safety: audible confirmation + kill phrase ("goodnight cozy")
+```
+Cozy/
+├── setup.sh              one-shot environment installer
+├── run.sh                launch the assistant
+├── README.md             this file
+├── LICENSE
+│
+├── wakeword/             "hey cozy" detection
+│   ├── README.md
+│   ├── pyproject.toml    livekit-wakeword v0.2.0 (vendored)
+│   ├── output/hey_cozy/  trained ONNX + eval metrics
+│   ├── user_voice/       your real-voice data (regenerable)
+│   ├── configs/          training YAMLs
+│   ├── docs/             livekit-wakeword architecture docs
+│   ├── test_model.py     live-mic / wav test CLI
+│   ├── extract_user_voice.py  regenerate user_voice/ from sources
+│   └── src/livekit/wakeword/  library source
+│
+├── stt-finetune/         Whisper-small finetune
+│   ├── README.md
+│   ├── env.sh            dGPU pinning, offline mode
+│   ├── recordings/       your voice recordings (gitignored)
+│   ├── scripts/          train_lora, prepare_data, infer, ...
+│   ├── data/             Indian English corpora
+│   ├── output/           CT2 + HF exports
+│   └── third_party/      whisper.cpp / openai-whisper
+│
+├── assistant/            Voice assistant runtime
+│   ├── README.md
+│   ├── pyproject.toml    cozy-assistant v1.49
+│   ├── runtime.py        main voice loop
+│   ├── stt.py            STT dual-engine wrapper (CT2 + HF fallback)
+│   ├── bridge.py         rule-based intent router
+│   ├── intents.py        intent definitions
+│   ├── executor.py       tool implementations
+│   ├── sft_qwen.py       LLM SFT trainer
+│   ├── make_dataset.py   tool-call dataset generator
+│   ├── data/             SFT training data
+│   └── model/
+│       ├── cozy-llm-v1/         Qwen3-0.6B base
+│       └── cozy-llm-v1-adapter/ LoRA adapter
+│
+└── team/                 Multi-agent team notes
+    ├── STATUS.md
+    ├── tool_schema.json  LLM tool definitions
+    ├── scripts/          training scripts (legacy)
+    ├── channel.jsonl     team communication log
+    └── data/
+```
 
-## Credits & license
+## Hardware requirements
 
-Built on the excellent open-source work of
-[openWakeWord](https://github.com/dscripka/openWakeWord) (Apache-2.0) and
-[Piper](https://github.com/rhasspy/piper) (MIT). Code in this repo is MIT —
-see [LICENSE](LICENSE).
+- **GPU**: NVIDIA RTX 3050 6 GB (or any ≥6 GB CUDA)
+- **Disk**: ~5 GB for venvs, ~3 GB for downloaded models, ~2 GB for training data
+- **RAM**: 16 GB recommended
+- **OS**: Linux (Ubuntu 24+ tested)
+- **Mic**: any USB / built-in
+
+## Documentation per folder
+
+- `wakeword/README.md` — wake word training & inference guide
+- `stt-finetune/README.md` — STT training & inference guide
+- `assistant/README.md` — assistant runtime modes
+- `team/STATUS.md` — multi-agent status board
+
+## Versioning
+
+We use `vX.YZ` tags at the repo level for "full repo snapshot" releases, with
+incremental `feat(...)` / `fix(...)` commits in between.
+
+| Tag | Date | What |
+|---|---|---|
+| v1.47 | — | full repo snapshot (pre-wakeword rewrite) |
+| v1.48 | — | swap in livekit-wakeword + train hey_cozy v1 |
+| v1.49 | — | wire assistant runtime to livekit-wakeword + user-voice retrain |

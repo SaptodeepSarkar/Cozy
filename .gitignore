@@ -1,14 +1,24 @@
-# python
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 
-# virtual environments
-.venv*/
+# Virtual environments (all three venvs)
+.venv/
+assistant/.venv/
+stt-finetune/.venv/
+wakeword/.venv/
 
-# heavyweight working data (downloads, synthetic bulk audio, caches)
+# Heavyweight working data (downloads, synthetic bulk audio, caches)
 wakeword/work/
+wakeword/data/   # downloaded by livekit-wakeword setup (~5 GB)
+wakeword/.venv/
 
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Model weights (kept out of git, regenerated/fetched separately)
+assistant/model/cozy-llm-v1/*.safetensors
+assistant/model/cozy-llm-v1/*.bin
+assistant/sft_log.txt

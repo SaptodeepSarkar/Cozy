@@ -1,0 +1,11 @@
+# venv
+.venv/
+__pycache__/
+*.py[cod]
+
+# SFT logs (large)
+sft_log.txt
+
+# Generated data files
+data/*.jsonl
+!data/.gitkeep

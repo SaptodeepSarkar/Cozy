@@ -1,95 +1,70 @@
-# CLAUDE.md
+# AGENTS.md — Cozy wake word agent notes
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Context for any AI agent picking up the wake word subsystem.
 
-## Project
+## What this is
 
-livekit-wakeword — wake word detection library using frozen ONNX feature extraction with trainable PyTorch classifiers. Hybrid architecture: ONNX mel spectrogram + speech embedding → PyTorch DNN/RNN classifier head.
+A vendored copy of [livekit-wakeword](https://github.com/livekit/livekit-wakeword)
+v0.2.0, plus a trained `hey_cozy.onnx` model and a regeneration pipeline for
+real-voice training data.
 
-## Commands
+## Critical files
 
-**Always use `uv` for package management. Always use `git` for version separation (branches, commits).**
+- `output/hey_cozy/hey_cozy.onnx` — the trained classifier. **Do not commit
+  changes without re-evaluating.**
+- `output/hey_cozy/hey_cozy_eval.json` — last eval metrics. If you retrain,
+  this updates.
+- `configs/hey_cozy_test.yaml` — training config used for the current model.
+  Edit `target_phrases`, `n_samples`, `steps` to retrain.
+- `extract_user_voice.py` — regenerates `user_voice/` from stt-finetune
+  recordings and old git history.
+- `test_model.py` — CLI for testing the model on wav / live mic.
+
+## Build & verify
 
 ```bash
-# Install
-uv sync                              # All deps including optional groups
-uv sync --group dev                  # Dev only
+# from wakeword/
+source .venv/bin/activate
 
-# Test
-uv run pytest tests/                 # All tests
-uv run pytest tests/test_config.py   # Single file
-uv run pytest -k "test_name"         # Single test
-uv run pytest --cov=src/livekit/wakeword tests/  # With coverage
+# Smoke-test the current model
+uv run livekit-wakeword eval configs/hey_cozy_test.yaml -m output/hey_cozy/hey_cozy.onnx
 
-# Lint & format
-uv run ruff check src/ tests/       # Lint (rules: E, F, I, UP)
-uv run ruff format src/ tests/      # Auto-format
-uv run mypy src/livekit/wakeword/       # Type check (strict mode)
+# Live-mic test
+python test_model.py --mic
 
-# CLI (entry point: livekit-wakeword = livekit.wakeword.cli:app)
-uv run livekit-wakeword setup [--config YAML]   # Data deps; Piper if piper_vits / VoxCPM snapshot if voxcpm; else always Piper when no --config
-uv run livekit-wakeword generate <config> # VITS TTS + SLERP speaker blending + adversarial negatives
-uv run livekit-wakeword augment <config>  # Augment + extract features → .npy
-uv run livekit-wakeword train <config>    # 3-phase adaptive training
-uv run livekit-wakeword export <config>   # Export classifier to ONNX
-uv run livekit-wakeword run <config>      # Full pipeline (generate→augment→extract→train→export)
+# Retrain
+uv run livekit-wakeword setup --config configs/hey_cozy_test.yaml --skip-acav
+uv run livekit-wakeword run configs/hey_cozy_test.yaml
 ```
 
-## Architecture
+## Conventions
 
-### Processing Pipeline (inference)
-```
-Raw audio (16kHz) → MelSpectrogramFrontend (ONNX) → SpeechEmbedding (ONNX) → Classifier (PyTorch) → [0,1]
-                    n_fft=512, hop=160, n_mels=32     76×32×1 → 96-dim         16×96 → 1 score
-```
+- `clip_NNNNNN.wav` is the livekit augment stage's required filename pattern.
+  Other names are silently skipped.
+- Heavy data (recordings, `work/`, `.venv/`) is gitignored.
+- The model file is git-ignored under `output*/` but we force-add it on
+  release commits. See `git log --diff-filter=A -- 'output/hey_cozy/hey_cozy.onnx'`.
 
-### Source Layout (`src/livekit/wakeword/`)
+## Common gotchas
 
-- **`config.py`** — Pydantic models + YAML loading (`load_config(path)`); `TtsBackend`, `PiperTtsConfig`, `VoxCpmTtsConfig`, `piper_checkpoint_path`, `voxcpm_local_model_path`
-- **`cli.py`** — Typer CLI with all commands
-- **`models/`**
-  - `feature_extractor.py` — `MelSpectrogramFrontend` (ONNX primary, torchaudio fallback) and `SpeechEmbedding` (ONNX only)
-  - `classifier.py` — `DNNClassifier` (FC+LayerNorm), `RNNClassifier` (Bi-LSTM), `build_classifier()` factory
-  - `pipeline.py` — `WakeWordClassifier` (training wrapper for classifier head)
-- **`data/`**
-  - `generate.py` — Synthetic clip orchestration (`run_generate`); default TTS via `tts/` backends (`tts_backend` in config)
-  - `tts/` — `SpeechSynthesizer` protocol, `get_tts_backend()`, `PiperVitsBackend`, `VoxCpmBackend`
-  - `piper/` — Piper-style VITS: `generate_samples` (904-speaker SLERP), `vits/` model, `vits_utils.py`, `defaults.py` (checkpoint paths/URLs), `text.py` (CMUDict phrase prep)
-  - `augment.py` — `AudioAugmentor` (EQ, distortion, RIR, background mixing) for all 6 splits; positives aligned to END of window, negatives/backgrounds center-padded
-  - `dataset.py` — `WakeWordDataset` (memory-mapped .npy, mixed-class batch generator)
-  - `features.py` — Extract features through ONNX pipeline → .npy files
-- **`training/`**
-  - `trainer.py` — `WakeWordTrainer` with 3-phase training (full → refinement → fine-tuning), hard example mining, adaptive negative weighting, checkpoint averaging
-  - `metrics.py` — FPPH (false positives per hour), recall, balanced accuracy
-- **`export/onnx.py`** — Export classifier to ONNX with optional INT8 quantization
-- **`inference/`**
-  - `model.py` — `WakeWordModel` class for simple prediction API
-  - `listener.py` — `WakeWordListener` class for async microphone detection
-- **`swift/`** — `LiveKitWakeWord` Swift package: ONNX Runtime-based pipeline for iOS 16+ / macOS 14+. `WakeWordModel` (stateless predict) + `WakeWordListener` (actor around `AVAudioEngine`). The mel + embedding `.onnx` files from `src/livekit/wakeword/resources/` are bundled as package resources; classifier `.onnx` files are loaded from disk. ORT's CoreML Execution Provider (ANE/GPU/CPU) is used by default via `ExecutionProvider.coreML`. Depends on the [official ORT SPM package](https://github.com/microsoft/onnxruntime-swift-package-manager).
-- **`examples/ios_wakeword/`** — SwiftUI demo app (iOS + macOS) that consumes the `swift/` package via a local SPM dependency (`path: ../../swift`). `WakewordEngine` wraps `AVAudioEngine` + a 2 s Int16 ring buffer + background `WakeWordModel.predict()`; `ContentView` renders score/volume graphs and an execution-provider picker. Generated from `project.yml` via `xcodegen`.
+1. **`run_extraction` upstream bug**: `cli.py` calls `run_extraction(config)`
+   but the function signature is `run_extraction(config, sess_options)`. We
+   patched it in `src/livekit/wakeword/data/features.py` to make
+   `sess_options` optional. Keep this patch when pulling new upstream commits.
+2. **Augment stage uses regex `^clip_\d{6}\.wav$`**: any user-voice wavs must
+   be renamed to this pattern before they are processed by the livekit
+   augment stage.
+3. **Training on GPU with insufficient VRAM**: the model is tiny but the
+   augment stage loads all features into memory. If you train on a smaller
+   GPU, lower `batch_n_per_class.ACAV100M_sample` from 1024 to 256.
+4. **Threshold calibration**: the eval report's `optimal_threshold` is the
+   FPPH-minimizing threshold. For real-mic use, a lower threshold (0.20-0.30)
+   gives better recall at the cost of more false fires.
 
-### Key Design Decisions
+## Don't break these
 
-- **Feature extraction is numpy-based** (ONNX runtime), not torch tensors. Both frozen models (`melspectrogram.onnx`, `embedding_model.onnx`) are bundled with the package via `importlib.resources` (see `resources/__init__.py`).
-- **Embedding shape**: always `(batch, 16, 96)` — 16 timesteps of 96-dim vectors. Last 16 steps taken or left-padded.
-- **Model sizes** (tiny/small/medium/large) map to `layer_dim` and `n_blocks` in config. Factory: `build_classifier(model_type, model_size)`.
-- **Training loss**: BCE with hard example mining (only non-trivial predictions contribute) and linearly increasing negative class weight.
-- **Checkpoint averaging**: final model averages top checkpoints by 90th-pct accuracy and 10th-pct FPPH.
-- **Config format**: YAML loaded via `load_config(path)`. See `configs/hey_livekit.yaml` for reference.
-
-## Documentation
-
-For detailed documentation on each pipeline stage, see `docs/`:
-
-- [docs/overview.md](docs/overview.md) — Architecture and data flow
-- [docs/data-generation.md](docs/data-generation.md) — TTS synthesis and adversarial negatives
-- [docs/augmentation.md](docs/augmentation.md) — Audio transforms and alignment
-- [docs/feature-extraction.md](docs/feature-extraction.md) — Mel spectrograms and embeddings
-- [docs/training.md](docs/training.md) — 3-phase training and checkpoint averaging
-- [docs/export-and-inference.md](docs/export-and-inference.md) — ONNX export and Python API
-
-## Code Style
-
-- Python 3.11+, line length 100
-- Ruff for linting/formatting, mypy strict mode
-- Build system: hatchling, src layout (`src/livekit/wakeword/`)
+- The `run_extraction` patch in `features.py` (see gotcha #1).
+- The 2-second audio window contract: `WakeWordModel.predict` needs ≥ 2 s of
+  audio, not 80 ms like openwakeword used.
+- The `user_voice/` regeneration script: it pulls from `e2a4dda` commit for
+  the old `data/cozy/recording_*.wav` files. Don't drop that commit.

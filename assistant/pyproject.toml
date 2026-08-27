@@ -1,0 +1,34 @@
+[project]
+name = "cozy-assistant"
+version = "1.49.0"
+description = "Cozy voice assistant runtime (wake -> STT -> LLM -> executor)"
+requires-python = ">=3.11"
+readme = "README.md"
+authors = [{ name = "Saptodeep Sarkar" }]
+
+dependencies = [
+    # Core
+    "numpy>=1.24",
+    # Wake word (livekit-wakeword v0.2.0 from local wakeword/)
+    "livekit-wakeword",
+    "pyaudio>=0.2.14",
+    # Audio I/O
+    "sounddevice>=0.4.6",
+    "soundfile>=0.12",
+    # STT
+    "faster-whisper>=1.0.0",
+    "librosa>=0.10",
+    "transformers>=4.40",
+    "torch>=2.5",
+    "torchaudio>=2.5",
+    # LLM
+    "huggingface-hub>=0.20",
+    "safetensors>=0.4",
+    "tokenizers>=0.15",
+    # Utilities
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+# The assistant depends on the local wakeword/ package
+# Use uv workspaces for development; or pip install -e ../wakeword for direct install
