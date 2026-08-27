@@ -1,0 +1,65 @@
+# Quick training config for "hey cozy" — small run for fast iteration.
+# Use the test config to get an end-to-end pipeline working in minutes.
+# Bump n_samples + steps for production.
+
+model_name: hey_cozy
+
+target_phrases: ["hey cozy"]
+
+# Spelling variants nudge the TTS into varied pronunciations/accents
+# (cosy is just the British spelling of cozy).
+custom_spelling_variants: ["hey cozy", "hey cosy", "hey kozie"]
+
+# Data Generation
+n_samples: 500
+n_samples_val: 100
+n_background_samples: 100
+n_background_samples_val: 20
+tts_batch_size: 10
+
+# Adversarial negatives — phonetically similar phrases that should NOT trigger
+custom_negative_phrases:
+  # Bare wake word without prefix — most common false trigger
+  - "cozy"
+  - "cosy"
+  - "cozy."
+  # Phonetically similar prefixes
+  - "hey rosy"
+  - "hey nosy"
+  - "hey Josie"
+  - "hey Ozzie"
+  - "hey dozy"
+  - "hey posy"
+  - "hey noisy"
+  # Partial/adjacent phrases
+  - "hey closey"
+  - "hey copy"
+
+# Paths
+data_dir: ./data
+output_dir: ./output
+
+# Augmentation
+augmentation:
+  clip_duration: 2.0
+  batch_size: 8
+  rounds: 3
+  background_paths: [./data/backgrounds]
+  rir_paths: [./data/rirs]
+
+# Model Architecture
+model:
+  model_type: dnn        # tiny DNN for fast test
+  model_size: tiny
+
+# Training
+steps: 2000
+learning_rate: 0.001
+max_negative_weight: 1000
+target_fp_per_hour: 0.5
+
+batch_n_per_class:
+  positive: 20
+  adversarial_negative: 20
+  ACAV100M_sample: 128
+  background_noise: 20

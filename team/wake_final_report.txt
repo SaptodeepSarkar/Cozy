@@ -1,0 +1,26 @@
+STATUS DONE_FAIL
+epoch 19 loss=0.2591 val_auc=0.9887 safe_thr=None
+epoch 20 loss=0.2456 val_auc=0.9901 safe_thr=None
+epoch 21 loss=0.2368 val_auc=0.9899 safe_thr=None
+epoch 22 loss=0.2461 val_auc=0.9912 safe_thr=None
+epoch 23 loss=0.2281 val_auc=0.9923 safe_thr=None
+epoch 24 loss=0.2310 val_auc=0.9906 safe_thr=None
+epoch 25 loss=0.2290 val_auc=0.9912 safe_thr=None
+epoch 26 loss=0.2374 val_auc=0.9918 safe_thr=None
+epoch 27 loss=0.2367 val_auc=0.9917 safe_thr=None
+epoch 28 loss=0.2358 val_auc=0.9921 safe_thr=None
+epoch 29 loss=0.2245 val_auc=0.9922 safe_thr=None
+/home/saptodeepsarkar/Projects/Cozy/wakeword/cozynet_train.py:281: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+  torch.onnx.export(
+/home/saptodeepsarkar/Projects/Cozy/wakeword/.venv/lib/python3.12/site-packages/torch/onnx/_internal/torchscript_exporter/jit_utils.py:308: UserWarning: Constant folding - Only steps=1 can be constant folded for opset >= 10 onnx::Slice op. Constant folding not applied. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/jit/passes/onnx/constant_fold.cpp:178.)
+  _C._jit_pass_onnx_node_shape_type_inference(node, params_dict, opset_version)
+/home/saptodeepsarkar/Projects/Cozy/wakeword/.venv/lib/python3.12/site-packages/torch/onnx/_internal/torchscript_exporter/utils.py:709: UserWarning: Constant folding - Only steps=1 can be constant folded for opset >= 10 onnx::Slice op. Constant folding not applied. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/jit/passes/onnx/constant_fold.cpp:178.)
+  _C._jit_pass_onnx_graph_shape_type_inference(
+/home/saptodeepsarkar/Projects/Cozy/wakeword/.venv/lib/python3.12/site-packages/torch/onnx/_internal/torchscript_exporter/utils.py:1182: UserWarning: Constant folding - Only steps=1 can be constant folded for opset >= 10 onnx::Slice op. Constant folding not applied. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/jit/passes/onnx/constant_fold.cpp:178.)
+  _C._jit_pass_onnx_graph_shape_type_inference(
+early stop
+FINAL val_auc: 0.9923 | safe_threshold: None
+exported: /home/saptodeepsarkar/Projects/Cozy/wakeword/models/cozynet_v1.onnx
+COZYNET_DONE
+=== COZYNET_OK 18:07:42 ===
+=== COZYNET TRAIN v4 START 18:15:28 ===
