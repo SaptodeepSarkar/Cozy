@@ -1,0 +1,17 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# uv
+.venv/
+.python-version
+
+# LiveKit wakeword generated files
+data/
+output*/
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db

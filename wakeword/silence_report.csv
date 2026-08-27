@@ -1,6 +1,0 @@
-folder,n_files,orig_seconds,new_seconds,silence_seconds,pct
-cozy,0,0.00,0.00,0.00,0.0
-similar,248,287.80,284.31,3.49,1.2
-archive_bare_cozy/cozy,7,21.00,21.00,0.00,0.0
-archive_bare_cozy/similar,48,144.00,144.00,0.00,0.0
-TOTAL,303,452.80,449.31,3.49,0.8

@@ -1,81 +1,67 @@
-# Wakeword Pipeline
+# Cozy Wake Word (livekit-wakeword)
 
-Trains an openWakeWord-compatible detector for the word **cozy** entirely from
-synthetic multi-speaker speech (Piper) plus your own microphone recordings,
-then exports models/cozy_v1.onnx ready for real-time inference.
+This folder is a vendored copy of [livekit-wakeword](https://github.com/livekit/livekit-wakeword),
+an open-source wake-word library with a modern **conv-attention** classifier head
+(1D temporal convolutions + multi-head self-attention) on top of frozen
+mel-spectrogram + speech-embedding ONNX feature extractors.
 
-## Pipeline
+The previous custom pipeline (CozyNet v1/v2) was retired; this library is
+maintained upstream and ships a pre-trained `hey_livekit.onnx` model out of
+the box, plus a YAML-driven training pipeline to retrain for any wake word.
 
-    download_models.py      fetch TTS voices + feature models  -> work/
-          |
-    generate_data.py        synthesize positives/negatives     -> work/ + data/
-          |
-    train_wakeword.py       embed, train, export               -> models/cozy_v1.onnx
-          |
-    test_model.py           live mic / WAV verification
+## Quick start (inference with the pre-trained model)
 
-Or run everything at once:
+```bash
+# Install
+uv sync --all-extras                 # all deps (train + eval + export + listener)
+# or, for inference only:
+uv pip install livekit-wakeword pyaudio
 
-    bash setup.sh             # one-time environment
-    bash run_all.sh smoke     # ~10 min sanity pass (tiny counts)
-    bash run_all.sh full      # full dataset (~18k clips) + training
+# Run the live mic listener on the bundled "hey livekit" model
+uv run python examples/listener.py
+```
 
-## Scripts
+## Quick start (train your own wake word)
 
-| Script              | Purpose                                                        |
-| ------------------- | -------------------------------------------------------------- |
-| setup.sh            | create .venv, install PyTorch + dependencies                    |
-| download_models.py  | Piper voices (6 accents), LibriTTS-R multi-speaker generator, openWakeWord feature models |
-| generate_data.py    | synthesize all audio buckets (idempotent; --force regenerates)  |
-| record_samples.py   | guided microphone recording into data/cozy                      |
-| train_wakeword.py   | feature extraction, training, ONNX export, runtime sanity check |
-| test_model.py       | score WAVs or listen live (--mic)                               |
+```bash
+# 1. Download TTS voices + feature extractors + background noise + RIRs
+uv run livekit-wakeword setup --config configs/prod.yaml
 
-## Data folders
+# 2. Full pipeline: generate -> augment -> extract -> train -> export
+uv run livekit-wakeword run configs/prod.yaml
+```
 
-### data/cozy/  (positives)
-Recordings of the word **cozy**:
-- recording_NNN.wav - YOUR voice, made via record_samples.py (make 20+)
-- synth_NNN.wav - small synthetic demo subset copied by generate_data.py
-The bulk of synthetic positives lives in work/synthetic/ (git-ignored) but is
-regenerable any time.
+Edit `configs/prod.yaml` (or copy `configs/test.yaml` for a small run):
 
-### data/similar/  (hard negatives)
-Words that sound close to cozy - nosy, rosy, Josie, Ozzie, dozy, posy, noisy -
-so the model learns what is NOT cozy. Seeds are committed; the full per-word
-sets are regenerated into work/similar/ during data generation.
+```yaml
+model_name: hey_cozy
+target_phrases: ["hey cozy"]
+custom_negative_phrases: ["hey cozy", "hey dozy", "hey posy", ...]
+```
 
-## Configuration
+## Repository layout
 
-Everything tunable lives in config.yaml: the wake word text and spelling
-variants, the similar-words list, clip counts, Piper batch sizes and training
-hyperparameters. After editing, rerun:
+| Path                              | Source                              |
+|-----------------------------------|-------------------------------------|
+| `src/livekit/wakeword/`           | The library (installable package)   |
+| `configs/`                        | Sample YAML training configs        |
+| `examples/`                       | Inference + listener scripts        |
+| `examples/resources/*.onnx`       | Pre-trained "hey livekit" / "nihao livekit" classifiers |
+| `docs/`                           | Architecture + data + training docs |
+| `tests/`                          | Pytest suite                        |
+| `swift/`                          | iOS / macOS Swift package           |
+| `pyproject.toml` / `uv.lock`      | Python project + locked deps        |
 
-    python generate_data.py --force
-    python train_wakeword.py
+## Why this and not a custom model?
 
-## Requirements
+- The **conv-attention** head achieves 60x lower AUT and 100x fewer false
+  positives per hour than the flat DNN, while detecting 17% more wake words
+  (see the [livekit-wakeword README](https://github.com/livekit/livekit-wakeword#why-livekit-wakeword)).
+- Backward compatible with openWakeWord ONNX models and library.
+- One YAML drives the whole pipeline: TTS synthesis, augmentation, training,
+  ONNX export, and DET-curve evaluation.
+- Multilingual (30+ languages) via VoxCPM2 TTS.
 
-- Python 3.10-3.12, ffmpeg not required
-- sudo apt install libportaudio2 (for microphone recording / live testing)
-- ~4 GB disk in wakeword/work/ during a full run
-- GPU optional but much faster (RTX 3050 trains comfortably); CPU works with
-  smaller Piper batch sizes (handled automatically)
+## Upstream
 
-## Using the trained model
-
-The exported ONNX plugs straight into openWakeWord:
-
-    from openwakeword.model import Model
-    model = Model(wakeword_models=["models/cozy_v1.onnx"],
-                  inference_framework="onnx")
-    score = model.predict(audio_chunk_int16_1280)   # 80 ms chunks
-
-See test_model.py for a complete streaming example.
-
-## Troubleshooting
-
-- piper-sample-generator fails to install on exotic Pythons: use 3.11/3.12.
-- No microphone in test_model.py: check libportaudio2 and arecord -L.
-- Training data stale after config edits: add --force to generate_data.py.
-- Everything is resumable: downloads cache, generated buckets skip when full.
+https://github.com/livekit/livekit-wakeword — Apache 2.0
