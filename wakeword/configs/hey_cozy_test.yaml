@@ -53,13 +53,13 @@ model:
   model_size: tiny
 
 # Training
-steps: 2000
+steps: 5000
 learning_rate: 0.001
 max_negative_weight: 1000
 target_fp_per_hour: 0.5
 
 batch_n_per_class:
-  positive: 20
-  adversarial_negative: 20
+  positive: 50
+  adversarial_negative: 30
   ACAV100M_sample: 128
   background_noise: 20

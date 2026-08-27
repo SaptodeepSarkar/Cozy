@@ -9,7 +9,7 @@ Real-time mic listening uses the upstream WakeWordListener (handles
 audio capture, sliding windows, and debounce internally).
 
 Usage:
-    python test_model.py --mic                    # live listening (threshold 0.37)
+    python test_model.py --mic                    # live listening (threshold 0.30)
     python test_model.py --mic --threshold 0.5    # custom threshold
     python test_model.py --wav some_clip.wav      # score a single wav
     python test_model.py --wav a.wav b.wav c.wav   # score multiple wavs
@@ -159,8 +159,11 @@ def main():
                         help="record SECONDS via the live audio path, save "
                              "work/calib_hey_cozy.wav and score it per second")
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
-    parser.add_argument("--threshold", type=float, default=0.37,
-                        help="wake trigger threshold (0-1, default 0.37)")
+    parser.add_argument("--threshold", type=float, default=0.30,
+                        help="wake trigger threshold (0-1, default 0.30 = "
+                             "tuned for user-voice data. "
+                             "Use 0.60 for near-zero false fires (high precision); "
+                             "use 0.20 for max sensitivity (high recall)")
     args = parser.parse_args()
 
     print_meta(args.model, args.threshold)
