@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Cozy launcher - eager-loads wakeword + STT + LLM + TTS, then starts the
+# voice loop. Designed to feel instant on first wake word.
+#
+# Usage:
+#   cozy                 # full voice loop (default)
+#   cozy --text          # type commands instead of speaking
+#   cozy --calibrate     # 30s wake score log
+#   cozy --no-wake       # voice loop without wake gate
+#   cozy --no-tts        # log replies but don't speak
+#   cozy --fast-harness  # use the optimized harness (RAM + context)
+#   cozy --threshold 0.5 # custom wake threshold
+#   cozy --status        # which models are on disk
+#   cozy --stop          # kill any running cozy process
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+PY="$ROOT/assistant/.venv/bin/python"
+
+case "${1:-}" in
+  "" | --tui)
+    # Launch the Node Ink TUI by default.
+    if [ ! -d "$ROOT/assistant/tui-node/node_modules" ]; then
+      echo "Installing tui-node deps..." >&2
+      (cd "$ROOT/assistant/tui-node" && npm install --silent) || exit 1
+    fi
+    exec node "$ROOT/assistant/tui-node/tui.mjs" "$@"
+    ;;
+  --status)
+    echo "Cozy model status:"
+    for p in \
+      "$ROOT/wakeword/output/hey_cozy/hey_cozy.onnx" \
+      "$ROOT/stt-finetune/output/cozy_stt_v1_ct2_int8/model.bin" \
+      "$ROOT/stt-finetune/output/hf_finetuned/pytorch_model.bin" \
+      "$ROOT/assistant/model/cozy-llm-v1/model.safetensors" \
+      "$ROOT/assistant/model/cozy-llm-v1-adapter/adapter_model.safetensors"; do
+      if [[ -e "$p" ]]; then
+        sz=$(du -h "$p" | cut -f1)
+        printf "  OK   %-72s (%s)\n" "$p" "$sz"
+      else
+        printf "  MISS %s\n" "$p"
+      fi
+    done
+    exit 0
+    ;;
+  --stop)
+    pkill -f 'assistant/runtime.py' && echo "cozy stopped" || echo "no cozy process"
+    exit 0
+    ;;
+  --help|-h)
+    sed -n '2,18p' "$0"
+    exit 0
+    ;;
+esac
+
+# Sanity check the critical paths
+MISSING=0
+for p in \
+  "$ROOT/assistant/.venv/bin/python" \
+  "$ROOT/wakeword/output/hey_cozy/hey_cozy.onnx" \
+  "$ROOT/stt-finetune/output/cozy_stt_v1_ct2_int8" \
+  "$ROOT/stt-finetune/output/hf_finetuned" \
+  "$ROOT/assistant/model/cozy-llm-v1"; do
+  if [[ ! -e "$p" ]]; then
+    echo "Missing: $p" >&2
+    MISSING=1
+  fi
+done
+if [[ "$MISSING" -ne 0 ]]; then
+  echo "Run: bash setup.sh, then python assistant/sft_qwen.py" >&2
+  exit 1
+fi
+
+# Note: we used to do a `python -c "import kokoro"` check here. That
+# takes 16s on first run because Kokoro downloads its model. Skip the
+# check - the TTS plugin loads lazily on first speak(), and the
+# runtime emits a warning if Kokoro is missing.
+
+# Make the venv site-packages importable from the script.
+export PYTHONPATH="$ROOT/assistant${PYTHONPATH:+:$PYTHONPATH}"
+
+cat <<'BANNER'
+  ╔══════════════════════════════════════════════════════════╗
+  ║  🎙️  Cozy voice assistant                              ║
+  ║     wakeword  → STT  → LLM  → executor  → TTS          ║
+  ╚══════════════════════════════════════════════════════════╝
+BANNER
+
+# Pass through all CLI flags to runtime.py. The runtime loads all four
+# models, then enters the wake loop.
+exec "$PY" "$ROOT/assistant/runtime.py" "$@"

@@ -65,17 +65,17 @@ def main() -> None:
 
     cfg = SFTConfig(
         output_dir=str(HERE / "model" / "sft_runs"),
-        num_train_epochs=3,
+        num_train_epochs=1,
         learning_rate=1e-4,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=4,
         per_device_eval_batch_size=2,
         eval_strategy="steps",
-        eval_steps=40,
+        eval_steps=50,
         logging_steps=10,
         save_strategy="no",
         bf16=True,
-        max_length=1024,
+        max_length=1024,  # most rows fit in 1024 now after tool pruning
         report_to=[],
         seed=42,
     )
@@ -96,9 +96,16 @@ def main() -> None:
 
     merged = trainer.model.merge_and_unload()
     OUT.mkdir(parents=True, exist_ok=True)
-    merged.save_pretrained(str(OUT))
+    # Use safe_serialization=True (default in transformers >= 4.x) and 
+    # max_shard_size=2GB so the file definitely lands in cozy-llm-v1/.
+    # Also explicitly print files to catch the case where save_pretrained
+    # silently writes elsewhere.
+    saved = merged.save_pretrained(str(OUT), safe_serialization=True,
+                                    max_shard_size="2GB")
+    print(f"save_pretrained returned: {saved}")
     tok.save_pretrained(str(OUT))
     print("saved merged model ->", OUT)
+    print("contents of OUT:", sorted(p.name for p in OUT.iterdir()))
 
     # smoke test: does it emit a tool call for a seen-style command?
     merged.eval()
@@ -109,12 +116,13 @@ def main() -> None:
                          .read_text())["tools"],
         tokenize=False,
         add_generation_prompt=True,
+        enable_thinking=False,
     )
     ids = tok(prompt, return_tensors="pt").to(merged.device)
-    out_ids = merged.generate(**ids, max_new_tokens=80, do_sample=False)
+    out_ids = merged.generate(**ids, max_new_tokens=200, do_sample=False)
     text = tok.decode(out_ids[0][ids["input_ids"].shape[1]:],
-                      skip_special_tokens=True)
-    print("SMOKE OUTPUT:", text.strip()[:200])
+                      skip_special_tokens=False)
+    print("SMOKE OUTPUT:", text.strip()[:400])
 
 
 SYSTEM_TEXT = (

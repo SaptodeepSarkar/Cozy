@@ -49,6 +49,7 @@ uv venv .venv --python 3.11
 | `model/cozy-llm-v1/` | Qwen3-0.6B base model |
 | `model/cozy-llm-v1-adapter/` | LoRA adapter (40 MB) |
 | `data/` | SFT training data (jsonl) |
+| `rlm_harness/` | RLM tool-call SFT data collector + evaluator (see its README) |
 
 ## Runtime modes
 
@@ -106,6 +107,26 @@ The LLM has access to 15 tools (see `../team/tool_schema.json`):
 - `file.read`
 - `shell.run` (with confirm prompt)
 - `agent.delegate` (bridge to local agent skills)
+
+## RLM harness (data collection for the next SFT)
+
+`rlm_harness/` is the loop that grows the SFT dataset. After the v1.49
+LoRA is shipped, every new tool, every phrasing the user invents, every
+edge case can be recorded as one short trace and folded into the next
+training run:
+
+```bash
+# from the repo root
+bash rlm.sh info                                # task counts + tool list
+bash rlm.sh dataset --limit 20                  # collect 20 traces by hand
+bash rlm.sh play    --limit 100 --also-sft      # log 100 model decisions
+bash rlm.sh merge --source assistant/data/sft_extra.jsonl
+python assistant/sft_qwen.py                    # retrain
+```
+
+The collected JSONL uses the same `{messages, tools}` schema as
+`make_dataset.py`, so it drops straight into `sft_qwen.py` with no
+glue.
 
 ## v1.49 changes
 

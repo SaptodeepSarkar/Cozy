@@ -61,20 +61,78 @@ def msg(role, content):
 
 
 def tool_call(name, params=None):
-    return json.dumps({"name": name, "parameters": params or {}},
-                      separators=(",", ":"))
+    """Return an assistant message dict with a proper tool_calls list
+    (Qwen3 / OpenAI shape). The chat template renders this as the
+    <tool_call>...</tool_call> block; the runtime regex extracts it."""
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(params or {}, ensure_ascii=False),
+            },
+        }],
+    }
+
+
+def tool_result(name, ok=True, output="OK"):
+    return {
+        "role": "tool",
+        "name": name,
+        "content": ("OK: " if ok else "ERR: ") + str(output),
+    }
+
+
+AFFIRMATIONS = {
+    "system.volume.set":    ["Done. Volume set.", "Volume changed.", "On it."],
+    "system.volume.mute":   ["Muted.", "Done."],
+    "system.brightness.set":["Brightness adjusted.", "Done."],
+    "app.open":             ["Opening.", "Launching.", "On it."],
+    "app.close":            ["Closed.", "Done."],
+    "screenshot.take":      ["Screenshot taken.", "Captured."],
+    "media.play":           ["Playing.", "On it."],
+    "media.pause":          ["Paused.", "Done."],
+    "media.next":           ["Next track.", "Done."],
+    "media.previous":       ["Previous track.", "Done."],
+    "window.minimize_all":  ["Desktop is clear.", "Done."],
+    "settings.open":        ["Opening settings.", "Done."],
+    "browser.search":       ["Searching.", "Looking it up."],
+    "browser.open_url":     ["Opening browser.", "Done."],
+    "time.now":             ["Done."],
+    "date.now":             ["Done."],
+}
+
+
+def affirmation(name):
+    opts = AFFIRMATIONS.get(name, ["Done."])
+    return rng.choice(opts)
 
 
 samples = []
 
 
 def add(user_text, assistant_content):
-    samples.append({
-        "messages": [
+    if isinstance(assistant_content, dict) and assistant_content.get("tool_calls"):
+        # Tool call: emit the tool-call turn, a tool result, and an affirmation
+        tc_msg = assistant_content
+        name = tc_msg["tool_calls"][0]["function"]["name"]
+        messages = [
             msg("system", SYSTEM),
             msg("user", user_text),
-            msg("assistant", assistant_content),
-        ],
+            tc_msg,
+            tool_result(name),
+            msg("assistant", affirmation(name)),
+        ]
+    else:
+        messages = [
+            msg("system", SYSTEM),
+            msg("user", user_text),
+            msg("assistant", str(assistant_content)),
+        ]
+    samples.append({
+        "messages": messages,
         "tools": sample_tools(),
     })
 

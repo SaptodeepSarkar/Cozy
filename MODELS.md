@@ -11,6 +11,7 @@ metrics. This is the source of truth for "what model version are we on?".
 | STT | `whisper-small` + LoRA v3 (CT2) | v1 | `stt-finetune/output/cozy_stt_v1_ct2_int8/` | ~80 MB | WER 9.92% user-holdout | 2026-08-26 |
 | STT | `whisper-small` + LoRA v3 (HF) | v1 | `stt-finetune/output/hf_finetuned/` | ~310 MB | (HF fallback) | 2026-08-26 |
 | LLM | `Qwen3-0.6B` + LoRA r=16 | v1 | `assistant/model/cozy-llm-v1/` + `cozy-llm-v1-adapter/` | 1.2 GB + 40 MB | 15-tool function calling | 2026-08-26 |
+| RLM harness | tool-call SFT data collector | v1 | `assistant/rlm_harness/` | (code only) | `dataset` / `play` / `serve` modes | 2026-08-28 |
 
 ## Versioning
 

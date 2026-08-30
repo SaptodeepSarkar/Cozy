@@ -10,4 +10,7 @@
 - CT2 conversion blocker open; HF fallback works.
 
 ## llm-agent
-- SFT launching now on freed GPU (Qwen3-0.6B LoRA, 1.4k fn-call samples).
+- v1.49 LoRA shipped (Qwen3-0.6B + r=16/alpha=32, 1.4k fn-call samples).
+- Next loop: RLM harness (`assistant/rlm_harness/`) for ongoing data
+  collection. `bash rlm.sh dataset` -> human oracle; `bash rlm.sh play`
+  -> eval / DPO mining. Re-run `sft_qwen.py` after each merge.

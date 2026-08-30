@@ -38,7 +38,21 @@ assistant/.venv/bin/python -m pip install --quiet --upgrade pip
 assistant/.venv/bin/python -m pip install --quiet \
     livekit-wakeword pyaudio sounddevice soundfile \
     faster-whisper librosa transformers torch torchaudio \
-    huggingface-hub safetensors tokenizers pyyaml numpy
+    huggingface-hub safetensors tokenizers pyyaml numpy \
+    peft trl accelerate
+
+# Install the cozy shell alias if it isn't already sourced.
+ALIAS_LINE='source /home/saptodeepsarkar/Projects/Cozy/cozy.shell'
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    [ -f "$rc" ] || touch "$rc"
+    if ! grep -qF "$ALIAS_LINE" "$rc" 2>/dev/null; then
+        printf "\n# Cozy voice assistant\n%s\n" "$ALIAS_LINE" >> "$rc"
+    fi
+done
+# Kokoro-82M is the TTS engine. It's a Python pip package and the
+# model auto-downloads from hexgrad/Kokoro-82M on first speak().
+# No system package needed.
+echo "  TTS: Kokoro-82M (pip package, model downloads on first use)
 
 echo
 echo "=== Setup complete ==="

@@ -56,7 +56,7 @@
   },
   "sliding_window": null,
   "tie_word_embeddings": true,
-  "transformers_version": "5.15.1",
+  "transformers_version": "5.16.1",
   "use_cache": false,
   "use_sliding_window": false,
   "vocab_size": 151936

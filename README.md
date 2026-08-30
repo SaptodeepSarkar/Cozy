@@ -10,6 +10,7 @@ A local, private, voice-controlled assistant. Say **"hey cozy"** and your PC
 | `wakeword/` | "hey cozy" detection (livekit-wakeword v0.2.0) | `wakeword/.venv` |
 | `stt-finetune/` | Speech-to-text (Whisper-small LoRA, Hinglish-aware) | `stt-finetune/.venv` |
 | `assistant/` | Voice assistant runtime: wake → STT → LLM → executor | `assistant/.venv` |
+| `assistant/rlm_harness/` | RLM tool-call SFT data collector + evaluator | shares assistant venv |
 | `team/` | Multi-agent notes, training scripts, status board | (no venv) |
 
 ## Quick start
@@ -24,6 +25,12 @@ bash run.sh --text          # type commands instead
 bash run.sh --no-wake       # skip wake gate
 bash run.sh --calibrate     # print live wake scores for 30s
 bash run.sh --threshold 0.50
+
+# Collect tool-call SFT data with the RLM harness
+bash rlm.sh info                                   # show task stats
+bash rlm.sh dataset --limit 10                     # 10 traces by hand
+bash rlm.sh play    --limit 50                     # log 50 model decisions
+bash rlm.sh merge --source assistant/data/sft_extra.jsonl
 ```
 
 ## Architecture
@@ -68,7 +75,21 @@ bash run.sh --threshold 0.50
 | Whisper-small LoRA v3 (CT2) | `stt-finetune/output/cozy_stt_v1_ct2_int8/` | ~80 MB | user recordings + Indian English corpora |
 | Whisper-small LoRA v3 (HF) | `stt-finetune/output/hf_finetuned/` | ~310 MB | (same) |
 | Qwen3-0.6B base | `assistant/model/cozy-llm-v1/` | 1.2 GB | base from HuggingFace |
-| Qwen3-0.6B LoRA adapter | `assistant/model/cozy-llm-v1-adapter/` | 40 MB | 1.4 k function-call samples |
+| Qwen3-0.6B LoRA adapter | `assistant/model/cozy-llm-v1-adapter/` | 40 MB | 1.4 k function-call samples (synthetic + STT seeds) |
+
+### RLM harness
+
+`assistant/rlm_harness/` is the data-collection side of the assistant.
+Two modes:
+
+* `bash rlm.sh dataset` — you (or another AI) play the oracle for every
+  task; the trace is dumped to JSONL in the exact same schema as
+  `assistant/data/sft_train.jsonl`.
+* `bash rlm.sh play`    — run the current `cozy-llm-v1` on every task and
+  log its decisions (for review and DPO pair mining).
+
+`bash rlm.sh merge --source <file>` folds collected rows into the
+training set; rerun `sft_qwen.py` to train the next iteration.
 
 ## Current state (v1.49)
 

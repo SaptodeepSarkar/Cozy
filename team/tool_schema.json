@@ -1,10 +1,18 @@
 {
-  "version": 1,
+  "version": 2,
   "phrase_variants": [
     "hey cozy",
     "cozy"
   ],
   "tools": [
+    {
+      "name": "rlm.delegate",
+      "params": {
+        "task": "string - the sub-task for the child agent",
+        "allow": "list of strings - tool names the child can use"
+      },
+      "desc": "Spawn a child agent to handle a multi-step sub-task. Use for commands that need multiple tool calls (e.g. 'set a reminder and send an email'). Returns the child's result as text."
+    },
     {
       "name": "system.volume.set",
       "params": {
@@ -91,7 +99,110 @@
       "name": "none",
       "params": {},
       "desc": "Normal conversation - no tool call"
+    },
+    {
+      "name": "timer.set",
+      "params": {
+        "minutes": "int, 1-180 (timer duration in minutes)",
+        "label": "string optional, e.g. 'pasta' or 'workout'"
+      },
+      "desc": "Set a countdown timer. e.g. 'set a timer for 15 minutes'"
+    },
+    {
+      "name": "alarm.set",
+      "params": {
+        "hour": "int 0-23, 24h clock",
+        "minute": "int 0-59",
+        "label": "string optional"
+      },
+      "desc": "Set an alarm at a specific time. e.g. 'wake me up at 7'"
+    },
+    {
+      "name": "reminder.set",
+      "params": {
+        "text": "string, what to remind about",
+        "minutes": "int optional, minutes from now"
+      },
+      "desc": "Set a one-shot reminder. e.g. 'remind me to call mom in 10 minutes'"
+    },
+    {
+      "name": "date.now",
+      "params": {},
+      "desc": "Speak today's date (vs time.now which speaks the clock time)"
+    },
+    {
+      "name": "system.lock",
+      "params": {},
+      "desc": "Lock the screen (gnome-screensaver / loginctl)"
+    },
+    {
+      "name": "system.shutdown",
+      "params": {
+        "delay_minutes": "int optional, default 0 = now",
+        "confirm": "bool, must be true. Ask the user before calling."
+      },
+      "desc": "Schedule a shutdown. Requires explicit user confirmation."
+    },
+    {
+      "name": "system.cancel_shutdown",
+      "params": {},
+      "desc": "Cancel a pending shutdown"
+    },
+    {
+      "name": "system.battery.status",
+      "params": {},
+      "desc": "Speak current battery percentage and charging state"
+    },
+    {
+      "name": "system.wifi.status",
+      "params": {},
+      "desc": "Speak current Wi-Fi connection status (SSID + on/off)"
+    },
+    {
+      "name": "clipboard.read",
+      "params": {},
+      "desc": "Speak the current clipboard contents"
+    },
+    {
+      "name": "clipboard.write",
+      "params": {
+        "text": "string, what to copy"
+      },
+      "desc": "Copy text to the clipboard"
+    },
+    {
+      "name": "note.add",
+      "params": {
+        "text": "string, the note body"
+      },
+      "desc": "Append a quick note to ~/cozy_notes.md (read back with note.read)"
+    },
+    {
+      "name": "note.read",
+      "params": {
+        "limit": "int optional, default 5 (most recent N notes)"
+      },
+      "desc": "Speak the most recent N notes"
+    },
+    {
+      "name": "calc.compute",
+      "params": {
+        "expression": "string, math expression e.g. '(2+3)*4'"
+      },
+      "desc": "Evaluate a simple math expression and speak the result"
+    },
+    {
+      "name": "app.list_running",
+      "params": {},
+      "desc": "List the apps currently open"
+    },
+    {
+      "name": "app.switch",
+      "params": {
+        "name": "string, app name or window title fragment"
+      },
+      "desc": "Switch focus to an already-open app"
     }
   ],
-  "notes": "Router maps STT text -> LLM (Qwen3-0.6B fine-tune); LLM emits {tool, params} JSON or none. Hinglish variants welcome in training data."
+  "notes": "Router maps STT text -> LLM (Qwen3-0.6B fine-tune); LLM emits {tool, params} JSON or none. Hinglish variants welcome in training data. v2: added timer.set, alarm.set, reminder.set, date.now, system.lock, system.shutdown (confirm-gated), system.cancel_shutdown, system.battery.status, system.wifi.status, clipboard.read/write, note.add/read, calc.compute, app.list_running, app.switch."
 }

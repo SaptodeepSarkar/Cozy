@@ -1,0 +1,7 @@
+# traces and ad-hoc datasets collected by the harness (regenerable)
+traces/
+data/*.jsonl
+!data/tasks_seed.jsonl
+data/*.traces.jsonl
+__pycache__/
+*.pyc
