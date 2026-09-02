@@ -38,3 +38,9 @@ assistant/data/hf_glaive/
 
 # Local override with real API keys
 .mcp.json.local
+
+# cozy-vision: regenerable artifacts (re-runnable via run.sh / setup.sh)
+cozy-vision/data/screenshots/
+cozy-vision/checkpoints/
+cozy-vision/datasets/
+cozy-vision/models/
