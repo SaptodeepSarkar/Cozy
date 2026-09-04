@@ -21,11 +21,11 @@ dependencies = [
     # Kokoro currently imports AlbertModel, which was removed from the
     # Transformers 5.x top-level API. Keep the voice and STT stacks on the
     # compatible 4.x line.
-    "transformers>=4.57,<5",
+    "transformers>=4.51,<4.56",
     "torch>=2.5",
     "torchaudio>=2.5",
     # LLM
-    "huggingface-hub>=0.20",
+    "huggingface-hub>=0.34,<1",
     "safetensors>=0.4",
     "tokenizers>=0.15",
     # Utilities

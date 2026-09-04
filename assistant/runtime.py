@@ -413,7 +413,11 @@ for venv_candidate in [WW.parent / ".venv", WW / ".venv"]:
             if sub.is_dir() and sub.name.startswith("python"):
                 candidate = sub / "site-packages"
                 if candidate.exists() and str(candidate) not in sys.path:
-                    sys.path.insert(0, str(candidate))
+                    # Keep the assistant venv first. The wakeword venv can
+                    # carry a newer huggingface-hub that is incompatible
+                    # with the pinned Transformers used by the LLM/Kokoro
+                    # stack. Append it only as a dependency fallback.
+                    sys.path.append(str(candidate))
                     break
 # Also add wakeword itself for in-tree imports
 if str(WW) not in sys.path:
@@ -470,12 +474,25 @@ def load_stt():
 
 
 def load_llm(use_dpo=True):
+    import json as _json
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     path = HERE / "model" / "cozy-llm-v1"
     if not path.exists():
         raise SystemExit("LLM not fine-tuned yet - run sft_qwen.py")
-    tok = AutoTokenizer.from_pretrained(str(path))
+    # Qwen3 checkpoints saved by newer Transformers store this field as a
+    # list, while the 4.x loader expects a token->token mapping. Supplying it
+    # explicitly keeps the pinned runtime compatible without editing model
+    # artifacts.
+    _tok_cfg = path / "tokenizer_config.json"
+    _extra = {}
+    if _tok_cfg.exists():
+        try:
+            _raw = _json.loads(_tok_cfg.read_text()).get("extra_special_tokens", [])
+            _extra = {str(token): str(token) for token in _raw} if isinstance(_raw, list) else {}
+        except (OSError, ValueError, TypeError):
+            pass
+    tok = AutoTokenizer.from_pretrained(str(path), extra_special_tokens=_extra)
     model = AutoModelForCausalLM.from_pretrained(
         str(path), torch_dtype=torch.bfloat16)
     # DPO adapter improves tool-call precision (78% vs 25% on the verifier
