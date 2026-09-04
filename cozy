@@ -15,7 +15,9 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+# Resolve symlinks so ~/.local/bin/cozy still locates the repository.
+SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || realpath "$0")"
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 PY="$ROOT/assistant/.venv/bin/python"
 
 # Convenience symlinks installed by install-global.sh.
