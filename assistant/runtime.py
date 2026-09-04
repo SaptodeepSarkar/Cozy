@@ -155,48 +155,57 @@ def run_json_mode(harness, executor, threshold=0.5):
                     # Run the same flow as a voice command
                     handle_user_text(text)
 
-    stdin_thread = threading.Thread(target=stdin_reader, daemon=True)
-    stdin_thread.start()
+    command_lock = threading.Lock()
 
     def handle_user_text(text):
         if harness is None:
             return
+        if not command_lock.acquire(blocking=False):
+            json_emit("rejected", reason="another command is still running")
+            return
         json_emit("heard", text=text)
-        if harness is None:
-            return
-        t0 = _time.time()
         try:
+            t0 = _time.time()
             name, args = harness.decide(text)
-        except Exception as exc:
-            json_emit("error", msg=str(exc))
-            return
-        dt = _time.time() - t0
-        if name == "none" or name == "":
-            for tr in reversed(harness.trace.recent):
-                if tr.role == "assistant" and tr.content:
-                    txt = re.sub(r"<\|im_end\|>", "", tr.content)
-                    txt = re.sub(r"<\|im_start\|>", "", txt)
-                    txt = re.sub(r"<\|endoftext\|>", "", txt)
-                    txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
-                    json_emit("llm_text", text=txt, dt=dt)
-                    if is_available():
-                        tts_speak(txt)
-                        json_emit("tts", text=txt)
-                    break
-        elif name:
-            json_emit("llm", tool=name, args=str(args)[:60], dt=dt)
-            try:
+            dt = _time.time() - t0
+            if name == "none" or name == "":
+                reply = ""
+                for tr in reversed(harness.trace.recent):
+                    if tr.role == "assistant" and tr.content:
+                        reply = re.sub(r"<\|im_end\|>", "", tr.content)
+                        reply = re.sub(r"<\|im_start\|>", "", reply)
+                        reply = re.sub(r"<\|endoftext\|>", "", reply)
+                        reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.S).strip()
+                        break
+                reply = reply or "I couldn't produce a response."
+                json_emit("llm_text", text=reply, dt=dt)
+                if is_available():
+                    json_emit("tts", text=reply)
+                    tts_speak(reply)
+                json_emit("done", text=reply, dt=_time.time() - t0)
+            elif name:
+                json_emit("llm", tool=name, args=str(args)[:60], dt=dt)
                 result = executor(name, args or {})
+                output = str(result.get("output", ""))
                 if result.get("ok"):
-                    out = result.get("output", "")
-                    json_emit("tool_result", name=name, out=out)
-                    if is_available():
-                        tts_speak(out)
-                        json_emit("tts", text=out)
+                    reply = output or "Done."
+                    json_emit("tool_result", name=name, out=output)
                 else:
-                    json_emit("tool_fail", name=name, out=result.get("output", ""))
-            except Exception as exc:
-                json_emit("tool_error", name=name, msg=str(exc))
+                    reply = f"Failed: {output or 'the action did not complete.'}"
+                    json_emit("tool_fail", name=name, out=output)
+                if is_available():
+                    json_emit("tts", text=reply)
+                    tts_speak(reply)
+                json_emit("done", text=reply, dt=_time.time() - t0)
+        except Exception as exc:
+            json_emit("error", msg=f"command failed: {exc}")
+        finally:
+            command_lock.release()
+
+    # Start reading only after handle_user_text exists. Starting the reader
+    # earlier created a small startup race for commands typed immediately.
+    stdin_thread = threading.Thread(target=stdin_reader, daemon=True)
+    stdin_thread.start()
 
     import sounddevice as sd
     import numpy as np
@@ -299,14 +308,20 @@ def run_json_mode(harness, executor, threshold=0.5):
         b = set(text.lower().split())
         return len(a & b) / min(len(a), len(b)) > 0.5 if (a and b) else False
 
-    voice_thread = threading.Thread(target=voice_loop, daemon=True)
+    def voice_runner():
+        try:
+            voice_loop()
+        except Exception as exc:
+            json_emit("error", msg=f"audio loop stopped: {exc}")
+
+    voice_thread = threading.Thread(target=voice_runner, daemon=True)
     voice_thread.start()
 
     # Main thread: idle until stdin / signal
     import signal
     signal.signal(signal.SIGTERM, lambda *a: stop_flag.__setitem__(0, True))
     signal.signal(signal.SIGINT, lambda *a: (stop_flag.__setitem__(0, True),
-                                                _sys.exit(0)))
+                                             sys.exit(0)))
     while not stop_flag[0]:
         _time.sleep(0.2)
 

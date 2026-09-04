@@ -101,6 +101,14 @@ done
 # No system package needed.
 echo "  TTS: Kokoro-82M (pip package, model downloads on first use)"
 echo
+# 4. Terminal UI: deterministic install from package-lock.json.
+if command -v npm >/dev/null 2>&1; then
+    echo "[ui] assistant/tui-node ..."
+    npm --prefix assistant/tui-node ci --silent
+else
+    echo "[ui] skipped (Node.js 20+ and npm are required for the terminal UI)" >&2
+fi
+
 echo "=== Setup complete ==="
 echo
 echo "Three venvs created:"

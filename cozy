@@ -21,11 +21,15 @@ PY="$ROOT/assistant/.venv/bin/python"
 case "${1:-}" in
   "" | --tui)
     # Launch the Node Ink TUI by default.
-    if [ ! -d "$ROOT/assistant/tui-node/node_modules" ]; then
-      echo "Installing tui-node deps..." >&2
-      (cd "$ROOT/assistant/tui-node" && npm install --silent) || exit 1
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+      echo "Node.js 20+ and npm are required for the Cozy terminal UI." >&2
+      exit 1
     fi
-    exec node "$ROOT/assistant/tui-node/tui.mjs" "$@"
+    if [ ! -x "$ROOT/assistant/tui-node/node_modules/.bin/tsx" ]; then
+      echo "Installing tui-node deps..." >&2
+      (cd "$ROOT/assistant/tui-node" && npm ci --silent) || exit 1
+    fi
+    exec npm --prefix "$ROOT/assistant/tui-node" start --silent -- "$@"
     ;;
   --status)
     echo "Cozy model status:"
