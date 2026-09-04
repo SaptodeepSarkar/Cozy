@@ -50,7 +50,7 @@ def main():
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    base = AutoModelForCausalLM.from_pretrained(str(model_dir), dtype=torch.bfloat16)
+    base = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=torch.bfloat16)
     base.config.use_cache = False
     base.gradient_checkpointing_enable(
         gradient_checkpointing_kwargs={"use_reentrant": False})

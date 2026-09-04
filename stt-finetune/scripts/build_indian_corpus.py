@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Build the Indian-English corpus from two ungated HF datasets into plain
 wav files + local manifests under data/:
 

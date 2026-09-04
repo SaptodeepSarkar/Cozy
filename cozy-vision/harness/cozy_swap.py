@@ -25,8 +25,9 @@ import time
 from pathlib import Path
 
 COZY_MARKER = "assistant/runtime.py"
-COZY_PYTHON = "/home/saptodeepsarkar/Projects/Cozy/assistant/.venv/bin/python"
-COZY_RUNTIME = "/home/saptodeepsarkar/Projects/Cozy/assistant/runtime.py"
+COZY_ROOT = Path(__file__).resolve().parents[2] / "Cozy"
+COZY_PYTHON = str(COZY_ROOT / "assistant" / ".venv" / "bin" / "python")
+COZY_RUNTIME = str(COZY_ROOT / "assistant" / "runtime.py")
 
 
 def _cozy_pids():

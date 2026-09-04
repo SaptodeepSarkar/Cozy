@@ -788,7 +788,7 @@ class CozyApp(App):
         from tts import is_available, speak as tts_speak
         import sounddevice as sd
         import numpy as np
-        WW_PATH = Path("/home/saptodeepsarkar/Projects/Cozy/wakeword/output/hey_cozy/hey_cozy.onnx")
+        WW_PATH = Path(__file__).resolve().parent.parent / "wakeword" / "output" / "hey_cozy" / "hey_cozy.onnx"
         if not WW_PATH.exists():
             return
         import contextlib, io

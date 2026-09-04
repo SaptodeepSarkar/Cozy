@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Build train/eval manifests combining the Indian-English corpora with YOUR
 recordings, up-sampling your voice so it gets a healthy share of gradient steps.
 

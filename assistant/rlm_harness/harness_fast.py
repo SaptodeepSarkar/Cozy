@@ -523,19 +523,19 @@ class FastHarness:
         # Only register plugins the config asks for. The implementations
         # themselves are lazy.
         if self.cfg.use_wake:
-            from rlm_harness.plugins.wake import WakePlugin
+            from .plugins.wake import WakePlugin
             self.plugins["wake"] = WakePlugin(self.cfg)
         if self.cfg.use_stt:
-            from rlm_harness.plugins.stt import STTPlugin
+            from .plugins.stt import STTPlugin
             self.plugins["stt"] = STTPlugin(self.cfg)
         if self.cfg.use_tts:
-            from rlm_harness.plugins.tts import TTSPlugin
+            from .plugins.tts import TTSPlugin
             self.plugins["tts"] = TTSPlugin(self.cfg)
         if self.cfg.use_llm:
-            from rlm_harness.plugins.llm import LLMPlugin
+            from .plugins.llm import LLMPlugin
             self.plugins["llm"] = LLMPlugin(self.cfg)
         if self.cfg.use_vision:
-            from rlm_harness.plugins.vision import VisionPlugin
+            from .plugins.vision import VisionPlugin
             self.plugins["vision"] = VisionPlugin(self.cfg)
 
     def get(self, name: str) -> Plugin | None:

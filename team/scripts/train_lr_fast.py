@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 
-WW = Path("/home/saptodeepsarkar/Projects/Cozy/wakeword")
+WW = Path(__file__).resolve().parents[2] / "wakeword"
 CACHE = WW / "work" / "mels_cache.npz"
 T = 63
 HOP = 31

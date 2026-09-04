@@ -44,7 +44,7 @@ def check_env():
     ok = True
     for tool in ("ffmpeg", "arecord"):
         if shutil.which(tool) is None:
-            print(f"  ✖ missing: {tool}  (sudo apt install ffmpeg alsa-utils)")
+            print(f"  ✖ missing: {tool}  (Arch: sudo pacman -S ffmpeg alsa-utils  |  Debian/Ubuntu: sudo apt install ffmpeg alsa-utils)")
             ok = False
         else:
             step_ok(tool)
@@ -108,8 +108,7 @@ def assets():
 def record(skip):
     banner("STEP 3/7 · Record YOUR voice (Hinglish included)")
     if skip:
-        n = len(list(RECORDINGS_DIR.glob))) if False else sum(
-            1 for _ in RECORDINGS_DIR.glob("session_*/*.wav"))
+        n = sum(1 for _ in RECORDINGS_DIR.glob("session_*/*.wav"))
         print(f"  skipped ({n} clips exist)")
         return
     while True:

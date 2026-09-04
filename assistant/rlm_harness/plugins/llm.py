@@ -50,12 +50,12 @@ class LLMPlugin(Plugin):
         import contextlib, io
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from peft import PeftModel
-        from rlm_harness.plugins._base import json_emit_safe as _emit
+        from ._base import json_emit_safe as _emit
         with contextlib.redirect_stdout(io.StringIO()), \
              contextlib.redirect_stderr(io.StringIO()):
             self._tok = AutoTokenizer.from_pretrained(str(self._model_dir))
             base = AutoModelForCausalLM.from_pretrained(
-                str(self._model_dir), dtype=torch.bfloat16,
+                str(self._model_dir), torch_dtype=torch.bfloat16,
                 attn_implementation="sdpa")
             if self._use_dpo:
                 base = PeftModel.from_pretrained(base, str(self._dpo_dir))

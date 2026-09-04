@@ -33,15 +33,21 @@ def _which_any(*names):
 
 def system_volume_set(params):
     level = max(0, min(100, int(params.get("level", 50))))
-    ok, out = _run(["pactl", "set-sink-volume", "@DEFAULT_SINK@",
-                    str(level) + "%"])
+    f = str(level) / 100.0
+    # PipeWire (Arch default), then PulseAudio compat, then ALSA fallback.
+    ok, out = _run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{f:.2f}"])
+    if not ok:
+        ok, out = _run(["pactl", "set-sink-volume", "@DEFAULT_SINK@",
+                        str(level) + "%"])
     if not ok:
         ok, out = _run(["amixer", "-q", "sset", "Master", str(level) + "%"])
     return ok, ("volume " + str(level) + "%") if ok else out
 
 
 def system_volume_mute(params=None):
-    ok, out = _run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"])
+    ok, out = _run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
+    if not ok:
+        ok, out = _run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"])
     if not ok:
         ok, out = _run(["amixer", "-q", "sset", "Master", "toggle"])
     return ok, "muted/unmuted" if ok else out
@@ -65,16 +71,18 @@ def system_brightness_set(params):
 
 
 APP_ALIASES = {
-    "browser": ["firefox", "google-chrome-stable", "chromium", "zen"],
-    "chrome": ["google-chrome-stable", "chromium"],
-    "files": ["nautilus"],
-    "terminal": ["gnome-terminal", "kgx", "x-terminal-emulator"],
-    "calculator": ["gnome-calculator"],
-    "settings": ["gnome-control-center"],
-    "notes": ["gnome-text-editor", "gedit"],
-    "text editor": ["gnome-text-editor", "gedit"],
-    "mail": ["thunderbird", "geary"],
-    "calendar": ["gnome-calendar"],
+    "browser": ["firefox", "google-chrome-stable", "chromium", "zen", "brave"],
+    "chrome": ["google-chrome-stable", "chromium", "brave"],
+    "files": ["nautilus", "thunar", "dolphin", "nemo", "pcmanfm"],
+    "terminal": ["gnome-terminal", "kgx", "x-terminal-emulator",
+                 "konsole", "xfce4-terminal", "alacritty", "kitty", "foot"],
+    "calculator": ["gnome-calculator", "kcalc", "qalculate-gtk", "kate"],
+    "settings": ["gnome-control-center", "systemsettings",
+                 "xfce4-settings-manager"],
+    "notes": ["gnome-text-editor", "gedit", "kate", "mousepad", "xed"],
+    "text editor": ["gnome-text-editor", "gedit", "kate", "mousepad", "xed"],
+    "mail": ["thunderbird", "geary", "kmail", "claws-mail", "evolution"],
+    "calendar": ["gnome-calendar", "korganizer", "calcurse"],
     "camera": ["snapshot"],
 }
 
@@ -125,19 +133,19 @@ def screenshot_take(params=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     out = str(out_dir / ("cozy_shot_" + str(int(__import__("time").time()))
                          + ".png"))
-    tool = _which_any("gnome-screenshot")
-    if tool:
-        return _run([tool, "-f", out], timeout=20), out
-    tool = _which_any("grim")
-    if tool:
-        return _run([tool, out], timeout=20), out
-    tool = _which_any("scrot")
-    if tool:
-        return _run([tool, out], timeout=20), out
-    tool = _which_any("import")
-    if tool:
-        return _run([tool, "-window", "root", out], timeout=20), out
-    return False, "no screenshot tool"
+    # Try Wayland-friendly tools first, then GNOME, then X11.
+    for cand in ("grim", "gnome-screenshot", "scrot", "import"):
+        tool = _which_any(cand)
+        if tool:
+            if cand == "grim":
+                return _run([tool, out], timeout=20), out
+            if cand == "gnome-screenshot":
+                return _run([tool, "-f", out], timeout=20), out
+            if cand == "scrot":
+                return _run([tool, out], timeout=20), out
+            if cand == "import":
+                return _run([tool, "-window", "root", out], timeout=20), out
+    return False, "no screenshot tool (install grim)"
 
 
 def media_control(action, params=None):
@@ -159,12 +167,20 @@ def settings_open(params):
     valid = {"wifi": "wifi", "bluetooth": "bluetooth", "display": "display",
              "sound": "sound", "notifications": "notifications",
              "power": "power"}
-    gcc = _which_any("gnome-control-center")
-    if not gcc:
-        return False, "gnome-control-center missing"
-    if page in valid:
-        return _run([gcc, valid[page]])
-    return _run([gcc])
+    # Try GNOME first, then KDE, then XFCE. Most distros ship one of these.
+    candidates = [
+        ("gnome-control-center", list(valid.values())),
+        ("systemsettings", []),  # KDE: pages are KDE-specific, fall through to no-arg
+        ("xfce4-settings-manager", []),
+    ]
+    for bin_name, pages in candidates:
+        bin_path = _which_any(bin_name)
+        if not bin_path:
+            continue
+        if bin_name == "gnome-control-center" and page in valid:
+            return _run([bin_path, valid[page]])
+        return _run([bin_path])
+    return False, "no settings app found (install gnome-control-center, systemsettings, or xfce4-settings-manager)"
 
 
 def browser_search(params):
@@ -368,14 +384,19 @@ def date_now(params=None):
 
 # ---- system control ----
 def system_lock(params=None):
+    # loginctl works on every systemd login session (Arch + Debian).
+    # Then Wayland compositors, then GNOME, then X11 fallback.
     for cmd in (["loginctl", "lock-session"],
+                ["swaylock", "-f"],
+                ["hyprlock"],
+                ["waylock"],
                 ["gnome-screensaver-command", "-l"],
                 ["xdg-screensaver", "lock"]):
         if _which_any(cmd[0]):
             ok, out = _run(cmd, timeout=5)
             if ok:
                 return True, "screen locked"
-    return False, "no screen lock tool found"
+    return False, "no screen lock tool found (install swaylock, gnome-screensaver, or xdg-utils)"
 
 
 def system_shutdown(params):

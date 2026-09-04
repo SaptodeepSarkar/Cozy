@@ -57,7 +57,7 @@ if __name__ == "__main__":
         from transformers import AutoModelForCausalLM, AutoTokenizer
         tok = AutoTokenizer.from_pretrained(str(HERE / "model" / "cozy-llm-v1"))
         model = AutoModelForCausalLM.from_pretrained(
-            str(HERE / "model" / "cozy-llm-v1"), dtype=torch.bfloat16)
+            str(HERE / "model" / "cozy-llm-v1"), torch_dtype=torch.bfloat16)
         model.to("cuda")
         model.eval()
         prompt = tok.apply_chat_template(

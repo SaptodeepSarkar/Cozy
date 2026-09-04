@@ -1,9 +1,9 @@
 ---
-base_model: /home/saptodeepsarkar/Projects/Cozy/assistant/model/cozy-llm-v1
+base_model: assistant/model/cozy-llm-v1
 library_name: peft
 pipeline_tag: text-generation
 tags:
-- base_model:adapter:/home/saptodeepsarkar/Projects/Cozy/assistant/model/cozy-llm-v1
+- base_model:adapter:assistant/model/cozy-llm-v1
 - dpo
 - lora
 - transformers

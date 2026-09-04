@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Dump real user utterances (recordings/*/.txt) as function-calling seed
 examples in the TEAM tool schema -> team/data/stt_command_seeds.jsonl
 Format per line: {"text": ..., "tool": {"name": ..., "parameters": {...}}}

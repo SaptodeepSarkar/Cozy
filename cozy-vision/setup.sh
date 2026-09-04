@@ -9,16 +9,23 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
-# --- 1. System packages (Pop!_OS / Ubuntu) -------------------------------
+# --- 1. System packages (Ubuntu / Pop!_OS / Arch) -----------------------
+PKGS=(ydotool grim slurp wl-clipboard xdotool)
 if command -v apt >/dev/null 2>&1; then
   if [[ "${SKIP_APT:-0}" != "1" ]]; then
-    echo "[setup] apt-get install ydotool grim wl-clipboard xdotool ..."
+    echo "[setup] apt-get install ydotool grim slurp wl-clipboard xdotool xwayland i3-wm sway libxkbcommon0 libxcb-cursor0 ..."
     sudo apt-get update
     sudo apt-get install -y \
         python3.11 python3.11-venv python3.12 python3.12-venv \
-        ydotool grim slurp wl-clipboard xdotool xwayland \
-        i3-wm sway wlr-screencopy-unstable \
-        libxkbcommon0 libxcb-cursor0 || true
+        "${PKGS[@]}" xwayland i3-wm sway \
+        libxkbcommon0 libxcb-cursor0 wlr-screencopy-unstable || true
+  fi
+elif command -v pacman >/dev/null 2>&1; then
+  if [[ "${SKIP_PACMAN:-0}" != "1" ]]; then
+    echo "[setup] pacman -S ydotool grim slurp wl-clipboard xdotool xwayland-run sway libxkbcommon libxcb portaudio ffmpeg espeak-ng"
+    sudo pacman -S --needed --noconfirm \
+        "${PKGS[@]}" xwayland-run sway libxkbcommon libxcb \
+        portaudio ffmpeg espeak-ng wlroots i3-wm || true
   fi
 fi
 

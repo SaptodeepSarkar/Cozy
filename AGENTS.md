@@ -83,9 +83,11 @@ bash rlm.sh play    --backend rule --limit 20    # rule-based smoke eval
 After `bash setup.sh`, source the alias block from your shell rc:
 
 ```bash
-echo 'source /home/saptodeepsarkar/Projects/Cozy/cozy.shell' >> ~/.bashrc
-echo 'source /home/saptodeepsarkar/Projects/Cozy/cozy.shell' >> ~/.zshrc
+echo 'source "$(dirname $(realpath $(which cozy 2>/dev/null || echo ./cozy)))/cozy.shell"' >> ~/.bashrc
+echo 'source "$(dirname $(realpath $(which cozy 2>/dev/null || echo ./cozy)))/cozy.shell"' >> ~/.zshrc
 ```
+
+Or just re-run `bash setup.sh` — it writes the correct line for you.
 
 Then:
 

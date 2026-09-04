@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Cozy STT CLI — finetuned whisper-small, fully local.
 
 Modes:

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Export fix: transformers v5's save_pretrained writes configs/layouts that
 CTranslate2 4.x mis-parses (empty transcriptions). This script overlays merged
 LoRA weights onto a PRISTINE base-model directory (original aux files kept),

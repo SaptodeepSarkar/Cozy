@@ -113,7 +113,7 @@ def main():
         print("[rlvr] Run assistant/sft_qwen.py first.", flush=True)
         sys.exit(1)
     tok = AutoTokenizer.from_pretrained(str(model_dir))
-    model = AutoModelForCausalLM.from_pretrained(str(model_dir), dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=torch.bfloat16)
     model = model.to("cuda").eval()
 
     schema = SCHEMA["tools"]
@@ -171,7 +171,7 @@ def main():
     from datasets import load_dataset
     from peft import LoraConfig, get_peft_model
 
-    base = AutoModelForCausalLM.from_pretrained(str(model_dir), dtype=torch.bfloat16)
+    base = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=torch.bfloat16)
     base.config.use_cache = False
     base.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     lora = LoraConfig(
@@ -219,7 +219,7 @@ def main():
     del model, trainer
     torch.cuda.empty_cache()
     from peft import PeftModel
-    base2 = AutoModelForCausalLM.from_pretrained(str(model_dir), dtype=torch.bfloat16)
+    base2 = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=torch.bfloat16)
     m2 = PeftModel.from_pretrained(base2, str(out_adapter)).to("cuda").eval()
     n_ok = 0
     for p in probes:

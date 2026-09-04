@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-WW = Path("/home/saptodeepsarkar/Projects/Cozy/wakeword")
+WW = Path(__file__).resolve().parents[2] / "wakeword"
 T = 63
 HOP = 31
 

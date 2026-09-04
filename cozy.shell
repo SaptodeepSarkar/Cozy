@@ -1,7 +1,7 @@
 # Cozy voice assistant - shell alias
 # Source this from your ~/.bashrc or ~/.zshrc:
-#   echo 'source /home/saptodeepsarkar/Projects/Cozy/cozy.shell' >> ~/.bashrc
-#   echo 'source /home/saptodeepsarkar/Projects/Cozy/cozy.shell' >> ~/.zshrc
+#   echo 'source "$(dirname $(realpath $(which cozy)))/cozy.shell"' >> ~/.bashrc
+# Or simply: bash setup.sh   (it adds the alias line for you)
 
 # Resolve the Cozy root from this file's location (works in both bash and zsh).
 _cozy_resolve_root() {

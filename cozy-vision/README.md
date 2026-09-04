@@ -54,8 +54,9 @@ bash run.sh train             # QLoRA SFT on the VLM
 bash run.sh train-vla         # QLoRA SFT on the VLA
 ```
 
-System tools the agent needs (install once with `sudo apt install
-ydotool xdotool grim wl-clipboard i3-wm`):
+System tools the agent needs (install once):
+- Ubuntu / Pop!_OS: `sudo apt install ydotool xdotool grim wl-clipboard i3-wm`
+- Arch / Manjaro: `sudo pacman -S --needed ydotool xdotool grim wl-clipboard i3-wm`
 - `ydotool` (or `xdotool`) — mouse + keyboard synthesis
 - `grim` (or `wlr-screencopy`) — screenshot
 - `swaymsg` (or `xdotool`) — OS context (active window, open windows)

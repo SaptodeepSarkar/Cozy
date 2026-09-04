@@ -1,6 +1,6 @@
 [project]
 name = "cozy-assistant"
-version = "1.49.0"
+version = "1.50.0"
 description = "Cozy voice assistant runtime (wake -> STT -> LLM -> executor)"
 requires-python = ">=3.11"
 readme = "README.md"

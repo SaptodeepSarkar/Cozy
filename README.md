@@ -91,7 +91,7 @@ Two modes:
 `bash rlm.sh merge --source <file>` folds collected rows into the
 training set; rerun `sft_qwen.py` to train the next iteration.
 
-## Current state (v1.49)
+## Current state (v1.51)
 
 - ✅ **Wake word** — `hey_cozy` model, AUT 0.020, FPPH 1.66, Recall 69% (user-voice trained)
 - ✅ **STT** — whisper-small + LoRA v3, 9.92% WER on user-holdout
@@ -176,4 +176,5 @@ incremental `feat(...)` / `fix(...)` commits in between.
 |---|---|---|
 | v1.47 | — | full repo snapshot (pre-wakeword rewrite) |
 | v1.48 | — | swap in livekit-wakeword + train hey_cozy v1 |
-| v1.49 | — | wire assistant runtime to livekit-wakeword + user-voice retrain |
+| v1.50 | — | Node Ink TUI + fast RLM harness + prime-agent audit |
+| v1.51 | — | Arch Linux compatibility + cross-platform path fixes |

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Stage 2 audio processing: word-by-word transcription mapping for user
 recordings, using energy-based segmentation + alignment heuristics:
 

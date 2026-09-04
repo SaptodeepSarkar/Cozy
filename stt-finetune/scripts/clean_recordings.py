@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Stage 1 audio processing for user recordings:
   1. strip leading/trailing silence (energy-based, keeps 150ms breathing room)
   2. peak-normalise to -3 dBFS so level never saturates the mel features

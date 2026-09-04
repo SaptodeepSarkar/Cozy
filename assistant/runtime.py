@@ -392,7 +392,7 @@ def load_llm(use_dpo=True):
         raise SystemExit("LLM not fine-tuned yet - run sft_qwen.py")
     tok = AutoTokenizer.from_pretrained(str(path))
     model = AutoModelForCausalLM.from_pretrained(
-        str(path), dtype=torch.bfloat16)
+        str(path), torch_dtype=torch.bfloat16)
     # DPO adapter improves tool-call precision (78% vs 25% on the verifier
     # probe set) but tends to over-fire on chitchat ("hello" -> time.now).
     # Default: SFT only. Use --dpo to opt into the RLVR'd adapter.

@@ -39,7 +39,7 @@ class TTSPlugin(Plugin):
              contextlib.redirect_stderr(io.StringIO()):
             import tts
         self._tts = tts
-        from rlm_harness.plugins._base import json_emit_safe as _emit
+        from ._base import json_emit_safe as _emit
         _emit("warmup", model="tts", state="done")
 
     def _do_free(self):

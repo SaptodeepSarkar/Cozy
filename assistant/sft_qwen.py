@@ -47,7 +47,7 @@ def main() -> None:
 
     model = AutoModelForCausalLM.from_pretrained(
         BASE,
-        dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,
         attn_implementation="sdpa",
     )
     lora = LoraConfig(

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """LoRA finetune whisper-small on Indian English (FLEURS en_in) + your voice.
 Runs fully on-device (RTX 3050 6GB): fp16 + LoRA adapters only.
 

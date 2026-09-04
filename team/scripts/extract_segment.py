@@ -1,7 +1,9 @@
 
 import sys
+from pathlib import Path
 
-text = open("/home/saptodeepsarkar/Projects/Cozy/wakeword/work/full.log",
+WW = Path(__file__).resolve().parents[2] / "wakeword"
+text = open(WW / "work" / "full.log",
             errors="ignore").read()
 marker = sys.argv[1] if len(sys.argv) > 1 else "COZYNET TRAIN v4 START"
 i = text.rfind(marker)

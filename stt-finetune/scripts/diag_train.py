@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Diagnostic: run the REAL Trainer for a few steps while inspecting every
 batch/loss to find why Trainer-reported CE (~30) differs from manual forward
 (~3.9). Prints signature of compute_loss, per-step stats, then exits.

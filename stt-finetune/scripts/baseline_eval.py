@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Baseline / post-train WER evaluation on data/manifests/eval.jsonl.
 
 Usage:

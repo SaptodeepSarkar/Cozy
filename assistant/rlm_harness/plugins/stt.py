@@ -38,7 +38,7 @@ class STTPlugin(Plugin):
 
     def _do_load(self):
         import contextlib, io
-        from rlm_harness.plugins._base import json_emit_safe as _emit
+        from ._base import json_emit_safe as _emit
         with contextlib.redirect_stdout(io.StringIO()), \
              contextlib.redirect_stderr(io.StringIO()):
             from stt import CozySTT

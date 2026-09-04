@@ -42,7 +42,7 @@ class WakePlugin(Plugin):
         if str(self._ww) not in sys.path:
             sys.path.insert(0, str(self._ww))
         import contextlib, io
-        from rlm_harness.plugins._base import json_emit_safe as _emit
+        from ._base import json_emit_safe as _emit
         with contextlib.redirect_stdout(io.StringIO()), \
              contextlib.redirect_stderr(io.StringIO()):
             from livekit.wakeword import WakeWordModel

@@ -54,22 +54,31 @@ case "${1:-}" in
     ;;
 esac
 
-# Sanity check the critical paths
+# Sanity check the critical paths. STT models are loaded lazily by
+# CozySTT and are not required to launch the runtime -- only the wake
+# word and the LLM base are needed at startup.
 MISSING=0
 for p in \
   "$ROOT/assistant/.venv/bin/python" \
   "$ROOT/wakeword/output/hey_cozy/hey_cozy.onnx" \
-  "$ROOT/stt-finetune/output/cozy_stt_v1_ct2_int8" \
-  "$ROOT/stt-finetune/output/hf_finetuned" \
   "$ROOT/assistant/model/cozy-llm-v1"; do
   if [[ ! -e "$p" ]]; then
     echo "Missing: $p" >&2
     MISSING=1
   fi
 done
+# STT is optional at launch; warn but don't fail.
+for p in \
+  "$ROOT/stt-finetune/output/cozy_stt_v1_ct2_int8" \
+  "$ROOT/stt-finetune/output/hf_finetuned" \
+  "$ROOT/assistant/model/cozy-llm-v1-adapter"; do
+  if [[ ! -e "$p" ]]; then
+    echo "Note (optional, lazy-loaded): $p" >&2
+  fi
+done
 if [[ "$MISSING" -ne 0 ]]; then
-  echo "Run: bash setup.sh, then python assistant/sft_qwen.py" >&2
-  exit 1
+    echo "Run: bash setup.sh" >&2
+    exit 1
 fi
 
 # Note: we used to do a `python -c "import kokoro"` check here. That

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Control experiment: convert STOCK whisper-small to GGML and verify
 whisper.cpp decodes it correctly on this machine. Isolates build/runtime
 issues from finetuned-weight issues.

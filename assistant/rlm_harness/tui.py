@@ -457,7 +457,7 @@ class TUI:
                     print(f"  {green('OK')} {out[:200]}")
                 else:
                     print(f"  {red('FAIL')} {result.get('output', '')[:200]}")
-                from rlm_harness.truncate import truncate_tail
+                from .truncate import truncate_tail
                 spoken = truncate_tail(result.get("output", ""))
                 self.last_action = (name, args or {})
             except Exception as exc:
@@ -486,7 +486,7 @@ class TUI:
                     print(f"  {green('OK')} {out[:200]}")
                 else:
                     print(f"  {red('FAIL')} {result.get('output', '')[:200]}")
-                from rlm_harness.truncate import truncate_tail
+                from .truncate import truncate_tail
                 spoken = truncate_tail(result.get("output", ""))
                 self.last_action = (name, args or {})
             except Exception as exc:

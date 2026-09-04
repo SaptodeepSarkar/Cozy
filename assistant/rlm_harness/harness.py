@@ -132,13 +132,13 @@ class ModelBackend(Backend):
             # base + LoRA adapter
             from peft import PeftModel
             self._model = AutoModelForCausalLM.from_pretrained(
-                str(base), dtype=torch_dtype,
+                str(base), torch_dtype=torch_dtype,
                 attn_implementation="sdpa")
             self._model = PeftModel.from_pretrained(
                 self._model, str(Path(adapter_dir)))
         else:
             self._model = AutoModelForCausalLM.from_pretrained(
-                str(base), dtype=torch_dtype,
+                str(base), torch_dtype=torch_dtype,
                 attn_implementation="sdpa")
 
         self._model = self._model.to(device)

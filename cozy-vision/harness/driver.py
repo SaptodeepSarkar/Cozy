@@ -22,8 +22,9 @@ The driver exposes a small synchronous API: :meth:`screenshot`,
 :meth:`click`, :meth:`move`, :meth:`type_text`, :meth:`hotkey`,
 :meth:`scroll`, :meth:`get_active_window`, :meth:`is_app_running`.
 
-On a fresh Pop!_OS install: ``sudo apt install ydotool
+On a fresh Ubuntu / Pop!_OS install: ``sudo apt install ydotool
 gnome-screenshot grim wl-clipboard``.
+On Arch / Manjaro: ``sudo pacman -S --needed ydotool grim wl-clipboard``.
 """
 from __future__ import annotations
 

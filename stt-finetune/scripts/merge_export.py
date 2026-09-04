@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Merge LoRA adapters into the base model, save a plain-HF checkpoint, and
 convert it to CTranslate2 int8_float16 for faster-whisper (your roadmap's STT).
 

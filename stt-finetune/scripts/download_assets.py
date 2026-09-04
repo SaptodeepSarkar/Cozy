@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Download the base STT model + Google FLEURS 'en_in' (Indian English) archives,
 extract them under data/fleurs_raw/, all inside stt-finetune/.
 
