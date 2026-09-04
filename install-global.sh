@@ -13,5 +13,11 @@ ln -sfn "$ROOT/cozy" "$TARGET"
 for name in cozystop cozystatus; do
   ln -sfn "$ROOT/cozy" "$BIN/$name"
 done
-case ":${PATH}:" in *":$BIN:"*) ;; *) echo "Add $BIN to PATH (for example: export PATH=\"$BIN:\$PATH\")" ;; esac
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+  touch "$rc"
+  if ! grep -qF "# Cozy user-local bin" "$rc" 2>/dev/null; then
+    printf '\n# Cozy user-local bin\nexport PATH="%s:$PATH"\n' "$BIN" >> "$rc"
+  fi
+done
+case ":${PATH}:" in *":$BIN:"*) ;; *) export PATH="$BIN:$PATH" ;; esac
 echo "Cozy is globally available as: $TARGET"
