@@ -87,3 +87,4 @@ const supervisor = new EngineSupervisor();
 const instance = render(<App eventSource={supervisor} send={supervisor.send} restart={supervisor.restart} stop={supervisor.stop} />);
 supervisor.start();
 process.once("SIGTERM", () => { supervisor.stop(); instance.unmount(); });
+process.once("SIGINT", () => { supervisor.stop(); instance.unmount(); process.exitCode = 0; });
