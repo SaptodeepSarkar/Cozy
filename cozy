@@ -37,7 +37,11 @@ case "${1:-}" in
       echo "Installing tui-node deps..." >&2
       (cd "$ROOT/assistant/tui-node" && npm ci --silent) || exit 1
     fi
-    exec npm --prefix "$ROOT/assistant/tui-node" start --silent -- "$@"
+    # Execute tsx directly so npm cannot buffer or consume terminal input.
+    # Ink needs the controlling TTY in raw mode for character-by-character
+    # text entry and Ctrl+C handling.
+    exec "$ROOT/assistant/tui-node/node_modules/.bin/tsx" \
+      "$ROOT/assistant/tui-node/src/index.tsx" "$@"
     ;;
   --status)
     echo "Cozy model status:"
