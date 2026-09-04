@@ -74,6 +74,7 @@ function EventLine({ event }: { event: EngineEvent }) {
   if (event.kind === "llm") return <Text>{prefix}<Text color={theme.warning}>RUN  </Text><Text color={theme.primary}>{textField(event, "tool")}</Text><Text color={theme.dim}> {textField(event, "args")}</Text></Text>;
   if (event.kind === "tool_result") return <Text>{prefix}<Text color={theme.success}>DONE </Text><Text color={theme.muted}>{textField(event, "name")} · {textField(event, "out")}</Text></Text>;
   if (event.kind === "rejected") return <Text>{prefix}<Text color={theme.warning}>SKIP </Text><Text color={theme.muted}>{textField(event, "reason")}</Text></Text>;
+  if (event.kind === "audio_profile") return <Text>{prefix}<Text color={theme.dim}>MIC  </Text><Text color={theme.muted}>rms {textField(event, "rms")} · noise {textField(event, "noise")} · peak {textField(event, "peak")}</Text></Text>;
   if (["error", "tool_error", "tool_fail", "backend_crash"].includes(event.kind)) return <Text>{prefix}<Text color={theme.danger}>ERR  </Text><Text color={theme.danger}>{textField(event, "message") || textField(event, "msg") || textField(event, "out")}</Text></Text>;
   if (event.kind === "backend_log") return <Text>{prefix}<Text color={theme.dim}>SYS  {textField(event, "message")}</Text></Text>;
   return null;

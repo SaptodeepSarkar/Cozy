@@ -49,7 +49,13 @@ class STTPlugin(Plugin):
             try:
                 self._stt._get_ct2()
             except Exception:
-                pass
+                # CUDA 12/13 CTranslate2 mismatch: warm the HF GPU fallback
+                # now so the first spoken command is not delayed by model
+                # loading.
+                try:
+                    self._stt._get_hf()
+                except Exception:
+                    pass
         _emit("warmup", model="stt", state="done")
 
     def _do_free(self):

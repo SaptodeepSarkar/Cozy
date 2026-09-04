@@ -276,7 +276,10 @@ def run_json_mode(harness, executor, threshold=0.5):
         import soundfile as sf
         from pathlib import Path as _P
         json_emit("stt_start")
-        frames = [audio_buf.copy()]
+        # The rolling wake window contains "hey cozy" and ambient noise;
+        # only post-wake audio should be sent to STT.
+        frames = []
+        levels = []
         silent_for = 0.0
         spoken = False
         t0 = _time.time()
@@ -289,16 +292,22 @@ def run_json_mode(harness, executor, threshold=0.5):
                 pcm = chunk[:, 0]
                 frames.append(pcm.copy())
                 level = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2)))
+                levels.append(level)
+                baseline = float(np.median(levels[: min(len(levels), 5)])) if levels else 0.0
+                speech_floor = max(120.0, baseline * 2.2)
                 json_emit("capture_level", level=min(1.0, level / 2000.0))
-                if level > 180:
+                if len(levels) >= 2 and level > speech_floor:
                     spoken = True
                     silent_for = 0.0
                 elif spoken:
                     silent_for += len(pcm) / 16000
             if spoken and silent_for >= 1.0:
                 break
-        pcm = np.concatenate(frames) if len(frames) > 1 else np.zeros(16000, np.int16)
-        energy = float(np.abs(pcm).mean())
+        pcm = np.concatenate(frames) if frames else np.zeros(16000, np.int16)
+        energy = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) if pcm.size else 0.0
+        peak = int(np.max(np.abs(pcm))) if pcm.size else 0
+        clipped = float(np.mean(np.abs(pcm) >= 32760)) if pcm.size else 0.0
+        json_emit("audio_profile", rms=round(energy, 1), peak=peak, clipped=round(clipped, 4), noise=round(float(np.median(levels[:5])) if levels else 0.0, 1))
         if energy < 100:
             json_emit("rejected", reason=f"low energy ({energy:.0f})")
             return ""

@@ -59,7 +59,7 @@ uv pip install --python assistant/.venv/bin/python --quiet \
     livekit-wakeword pyaudio sounddevice soundfile \
     faster-whisper librosa transformers torch torchaudio \
     huggingface-hub safetensors tokenizers pyyaml numpy \
-    peft trl accelerate
+    peft trl accelerate kokoro
 
 # 4. Download the LLM base model if it's not already on disk.
 # Qwen3-0.6B is small (~1.2 GB) and free. Required for `cozy` to start.
