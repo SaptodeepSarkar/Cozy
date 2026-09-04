@@ -18,6 +18,7 @@ sys.path.insert(0, str(STT_ROOT / "scripts"))
 class CozySTT:
     def __init__(self, prefer_engine="auto"):
         self._ct2 = None
+        self._ct2_device = None
         self._hf = None
         self.prefer = prefer_engine
         self.last_engine = None
@@ -27,9 +28,16 @@ class CozySTT:
         if self._ct2 is None:
             from faster_whisper import WhisperModel
             import torch
-            assert torch.cuda.is_available(), "dGPU required"
-            self._ct2 = WhisperModel(str(CT2_DIR), device="cuda",
-                                     device_index=0, compute_type="int8_float16")
+            if torch.cuda.is_available():
+                self._ct2 = WhisperModel(str(CT2_DIR), device="cuda",
+                                         device_index=0, compute_type="int8_float16")
+                self._ct2_device = "cuda"
+            else:
+                # CTranslate2 is still much faster than loading the HF
+                # Whisper fallback and works reliably on CPU-only hosts.
+                self._ct2 = WhisperModel(str(CT2_DIR), device="cpu",
+                                         compute_type="int8")
+                self._ct2_device = "cpu"
         return self._ct2
 
     def _get_hf(self):
@@ -63,6 +71,19 @@ class CozySTT:
                 # host may have CUDA 13 (libcublas.so.12 missing). Do not
                 # strand the voice loop: fall through to the HF CUDA engine.
                 self.ct2_error = str(exc)
+                # CUDA wheels may be installed without the matching cuBLAS
+                # runtime (for example libcublas.so.12). Retry this compact
+                # int8 model on CPU instead of falling back to a 16-second
+                # HF model load for every first utterance.
+                try:
+                    from faster_whisper import WhisperModel
+                    self._ct2 = WhisperModel(str(CT2_DIR), device="cpu", compute_type="int8")
+                    text = self._run_ct2(audio)
+                    if text:
+                        self.last_engine = "ct2-cpu"
+                        return text
+                except (OSError, RuntimeError, ImportError):
+                    self._ct2 = None
         if HF_DIR.exists():
             text = self._run_hf(audio)
             self.last_engine = "hf"

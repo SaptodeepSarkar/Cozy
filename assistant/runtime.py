@@ -289,6 +289,7 @@ def run_json_mode(harness, executor, threshold=0.5):
         levels = []
         silent_for = 0.0
         spoken = False
+        min_capture = float(os.environ.get("COZY_CAPTURE_MIN", "1.2"))
         t0 = _time.time()
         while _time.time() - t0 < float(os.environ.get("COZY_CAPTURE_TIMEOUT", "10")):
             try:
@@ -322,7 +323,7 @@ def run_json_mode(harness, executor, threshold=0.5):
                     silent_for = 0.0
                 elif spoken and (vad_model is None or chunk_vad_quiet >= 1):
                     silent_for += len(pcm) / 16000
-            if spoken and silent_for >= 1.0:
+            if spoken and (_time.time() - t0) >= min_capture and silent_for >= 1.0:
                 break
         pcm = np.concatenate(frames) if frames else np.zeros(16000, np.int16)
         energy = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) if pcm.size else 0.0
