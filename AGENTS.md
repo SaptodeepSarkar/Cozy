@@ -48,6 +48,9 @@ bash rlm.sh play    --backend rule --limit 20    # rule-based smoke eval
 
 - Git commit format: `feat(...):` or `fix(...):` for incremental; `vX.YZ:` for
   full-repo snapshots.
+- Git identity: use the owner's public identity for every commit and push:
+  `Saptodeep Sarkar <saptodeepsarkar28@gmail.com>`. Never use `@local`,
+  `cozy.local`, an agent/bot identity, or another temporary author identity.
 - Python ≥ 3.11. `uv` is the package manager. Each subfolder has its own
   venv — don't try to share.
 - Heavy data (recordings, training data, model weights) is gitignored.
