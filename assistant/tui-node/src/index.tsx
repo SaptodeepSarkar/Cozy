@@ -28,7 +28,13 @@ class EngineSupervisor {
   private shouldShowDiagnostic(message: string) {
     const s = message.toLowerCase();
     if (/torch_dtype.*deprecated|use `dtype` instead|unauthenticated requests|hf_token|huggingface_hub|futurewarning|userwarning/.test(s)) return false;
-    return /error|failed|traceback|exception|crash|stopped/.test(s);
+    return /error|failed|traceback|exception|crash|stopped|attributeerror|object has no attribute|cannot import name/.test(s);
+  }
+
+  private emitDiagnostic(message: string) {
+    if (this.shouldShowDiagnostic(message)) {
+      this.emit({ kind: "error", msg: message.trim(), ts: Date.now() / 1000 });
+    }
   }
 
   start = () => {
@@ -49,14 +55,14 @@ class EngineSupervisor {
         if (!line.trim()) continue;
         const event = parseEngineEvent(line);
         if (event) this.emit(event);
-        else if (this.shouldShowDiagnostic(line)) this.emit({ kind: "backend_log", message: line.trim(), ts: Date.now() / 1000 });
+        else this.emitDiagnostic(line);
       }
     });
     this.child.stderr.on("data", chunk => {
       stderrBuffer += chunk.toString();
       const lines = stderrBuffer.split("\n");
       stderrBuffer = lines.pop() || "";
-      for (const line of lines.slice(-5)) if (line.trim() && this.shouldShowDiagnostic(line)) this.emit({ kind: "backend_log", message: line.trim(), ts: Date.now() / 1000 });
+      for (const line of lines.slice(-5)) if (line.trim()) this.emitDiagnostic(line);
     });
     this.child.on("error", error => this.emit({ kind: "backend_crash", message: error.message, ts: Date.now() / 1000 }));
     this.child.on("exit", (code, signal) => {

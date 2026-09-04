@@ -54,7 +54,15 @@ class LLMPlugin(Plugin):
         from ._base import json_emit_safe as _emit
         with contextlib.redirect_stdout(io.StringIO()), \
              contextlib.redirect_stderr(io.StringIO()):
-            self._tok = AutoTokenizer.from_pretrained(str(self._model_dir))
+            extra = {}
+            cfg_path = self._model_dir / "tokenizer_config.json"
+            if cfg_path.exists():
+                try:
+                    raw = json.loads(cfg_path.read_text()).get("extra_special_tokens", [])
+                    extra = {str(token): str(token) for token in raw} if isinstance(raw, list) else {}
+                except (OSError, ValueError, TypeError):
+                    pass
+            self._tok = AutoTokenizer.from_pretrained(str(self._model_dir), extra_special_tokens=extra)
             base = AutoModelForCausalLM.from_pretrained(
                 str(self._model_dir), torch_dtype=torch.bfloat16,
                 attn_implementation="sdpa")

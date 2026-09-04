@@ -58,6 +58,9 @@ bash run.sh --no-wake       # skip wake gate
 bash run.sh --calibrate     # print live wake scores for 30s
 bash run.sh --threshold 0.50
 
+# Stop a running global Cozy session
+cozystop
+
 # Collect tool-call SFT data with the RLM harness
 bash rlm.sh info                                   # show task stats
 bash rlm.sh dataset --limit 10                     # 10 traces by hand
