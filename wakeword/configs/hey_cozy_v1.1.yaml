@@ -1,0 +1,52 @@
+model_name: hey_cozy_v1.1
+
+target_phrases: ["hey cozy"]
+custom_spelling_variants: ["hey cozy", "hey cosy", "hey kozie"]
+
+n_samples: 1500
+n_samples_val: 300
+n_background_samples: 200
+n_background_samples_val: 40
+tts_batch_size: 8
+
+custom_negative_phrases:
+  - "cozy"
+  - "cosy"
+  - "cozy."
+  - "hey rosy"
+  - "hey nosy"
+  - "hey Josie"
+  - "hey Ozzie"
+  - "hey dozy"
+  - "hey posy"
+  - "hey noisy"
+  - "hey closey"
+  - "hey copy"
+  - "he is cozy"
+  - "hey Kobe"
+  - "hey cosy"
+
+data_dir: ./data
+output_dir: ./output_v1.1
+
+augmentation:
+  clip_duration: 2.0
+  batch_size: 8
+  rounds: 3
+  background_paths: [./data/backgrounds]
+  rir_paths: [./data/rirs]
+
+model:
+  model_type: dnn
+  model_size: tiny
+
+steps: 5000
+learning_rate: 0.001
+max_negative_weight: 1000
+target_fp_per_hour: 0.5
+
+batch_n_per_class:
+  positive: 50
+  adversarial_negative: 30
+  ACAV100M_sample: 128
+  background_noise: 20

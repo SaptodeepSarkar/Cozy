@@ -13,6 +13,8 @@ wakeword/.venv/
 wakeword/work/
 wakeword/data/   # downloaded by livekit-wakeword setup (~5 GB)
 wakeword/.venv/
+# Whisper LoRA training output (regenerable via stt-finetune/scripts/train_lora.py)
+checkpoints/
 
 # OS noise
 .DS_Store
@@ -39,8 +41,19 @@ assistant/data/hf_glaive/
 # Local override with real API keys
 .mcp.json.local
 
-# cozy-vision: regenerable artifacts (re-runnable via run.sh / setup.sh)
-cozy-vision/data/screenshots/
-cozy-vision/checkpoints/
-cozy-vision/datasets/
-cozy-vision/models/
+# cozy-vision deleted in v1.52 (whole folder removed).
+# Versióned model snapshots (regenerable via setup.sh + training scripts).
+models/**/model.safetensors
+models/**/model.bin
+models/**/pytorch_model.bin
+models/**/cozy_stt-v1.1/ct2/
+# Wakeword training workspace (regenerable via livekit-wakeword run)
+wakeword/output_v1.1/
+# STT training workspace (regenerable via stt-finetune scripts)
+stt-finetune/output/cozy_stt_v1.1/
+stt-finetune/output/hf_finetuned_v1.1/
+stt-finetune/output/whisper_small_base_ct2/
+stt-finetune/checkpoints/
+# Backing symlinks (regenerated on first launch if missing)
+stt-finetune/output/cozy_stt_v1_ct2_int8
+stt-finetune/output/hf_finetuned

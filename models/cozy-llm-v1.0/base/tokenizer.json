@@ -255,7 +255,7 @@
       {
         "type": "ByteLevel",
         "add_prefix_space": false,
-        "trim_offsets": true,
+        "trim_offsets": false,
         "use_regex": false
       }
     ]
@@ -268,9 +268,9 @@
   },
   "decoder": {
     "type": "ByteLevel",
-    "add_prefix_space": true,
-    "trim_offsets": true,
-    "use_regex": true
+    "add_prefix_space": false,
+    "trim_offsets": false,
+    "use_regex": false
   },
   "model": {
     "type": "BPE",

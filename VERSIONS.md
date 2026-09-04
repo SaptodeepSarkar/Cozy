@@ -1,6 +1,25 @@
 # Cozy Release History
 
-## v1.51 (current)
+## v1.52 (current)
+**Wake + STT + LLM re-trained from scratch; versioned models/ tree + benchmarks**
+- **hey_cozy v1.1**: 1500 synth + 32 user-voice positives, 1500 adversarial
+  + 1500 background negatives, 3 rounds of augmentation, 5000 steps
+  adaptive. AUT **0.002** (8.3× better), FPPH **0.00** (was 1.66), Recall
+  **96%** (was 69%).
+- **cozy_stt v1.1**: r=32 LoRA on 1425 Hinglish clips (cv_indian +
+  santhosh_indian), 2 epochs. WER **9.55%** on 125-clip held-out
+  Indian-English eval (was 21.98% on the base whisper-small).
+- **cozy-llm v1.1**: Qwen3-0.6B + LoRA r=16, 1 epoch on 2739 SFT rows.
+  Tool-call accuracy **63%** (down from 84% on the un-tuned base — see
+  benchmark for root cause; needs 3 epochs + DPO, planned for v1.53).
+- **Versioned models/** tree (gitignored): `models/{hey_cozy,cozy_stt,cozy-llm}-v1.{0,1}/`
+  + `models/benchmarks/{wakeword,stt,llm}_v1_vs_v1.1.png` + `summary.md/csv`.
+- **cozy-vision/ deleted** (~7.5K lines of unused GUI-agent code).
+- Re-trained models are now symlinked into the runtime paths
+  (`wakeword/output/`, `stt-finetune/output/`, `assistant/model/`) so
+  `cozy` launches use v1.1 transparently.
+
+## v1.51
 **Arch Linux compatibility + cross-platform path fixes**
 - `setup.sh` rewritten with `uv` (seeded venvs + `uv pip install`); fixes
   the v1.49 silent "No module named pip" error and runs in ~3 min on a

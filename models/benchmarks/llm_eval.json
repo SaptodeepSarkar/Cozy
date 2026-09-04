@@ -1,0 +1,177 @@
+{
+  "v1.0": {
+    "model": "v1.0 (SFT 0.1)",
+    "accuracy": 0.8709677419354839,
+    "tool_accuracy": 0.8421052631578947,
+    "chat_accuracy": 0.9166666666666666,
+    "n_total": 31,
+    "n_tool": 19,
+    "n_chat": 12
+  },
+  "v1.1": {
+    "model": "v1.1 (SFT 1.0)",
+    "accuracy": 0.7419354838709677,
+    "tool_accuracy": 0.631578947368421,
+    "chat_accuracy": 0.9166666666666666,
+    "n_total": 31,
+    "n_tool": 19,
+    "n_chat": 12
+  },
+  "probes": [
+    {
+      "user": "set volume to 25",
+      "expect_tool": "system_volume_set",
+      "kind": "tool"
+    },
+    {
+      "user": "turn the volume down to 10",
+      "expect_tool": "system_volume_set",
+      "kind": "tool"
+    },
+    {
+      "user": "what time is it",
+      "expect_tool": "date_now",
+      "kind": "tool"
+    },
+    {
+      "user": "what's today's date",
+      "expect_tool": "date_now",
+      "kind": "tool"
+    },
+    {
+      "user": "open firefox",
+      "expect_tool": "app_open",
+      "kind": "tool"
+    },
+    {
+      "user": "launch the terminal",
+      "expect_tool": "app_open",
+      "kind": "tool"
+    },
+    {
+      "user": "search for cozy reviews",
+      "expect_tool": "browser_search",
+      "kind": "tool"
+    },
+    {
+      "user": "google best python ide",
+      "expect_tool": "browser_search",
+      "kind": "tool"
+    },
+    {
+      "user": "take a screenshot",
+      "expect_tool": "screenshot_take",
+      "kind": "tool"
+    },
+    {
+      "user": "snapshot my screen",
+      "expect_tool": "screenshot_take",
+      "kind": "tool"
+    },
+    {
+      "user": "lock the screen",
+      "expect_tool": "system_lock",
+      "kind": "tool"
+    },
+    {
+      "user": "lock my laptop",
+      "expect_tool": "system_lock",
+      "kind": "tool"
+    },
+    {
+      "user": "shut down the computer",
+      "expect_tool": "system_shutdown",
+      "kind": "tool"
+    },
+    {
+      "user": "power off",
+      "expect_tool": "system_shutdown",
+      "kind": "tool"
+    },
+    {
+      "user": "set brightness to 80",
+      "expect_tool": "system_brightness_set",
+      "kind": "tool"
+    },
+    {
+      "user": "dim the screen to 20 percent",
+      "expect_tool": "system_brightness_set",
+      "kind": "tool"
+    },
+    {
+      "user": "hey cozy",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "hi",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "thanks",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "what's your name",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "tell me a joke",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "what's 2 + 2",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "why is the sky blue",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "good morning",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "are you there",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "how's the weather",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "set volume to 50 and open firefox",
+      "expect_tool": "system_volume_set",
+      "kind": "tool"
+    },
+    {
+      "user": "what time is it and then lock the screen",
+      "expect_tool": "date_now",
+      "kind": "tool"
+    },
+    {
+      "user": "open chrome and search for cats",
+      "expect_tool": "app_open",
+      "kind": "tool"
+    },
+    {
+      "user": "you there?",
+      "expect_tool": null,
+      "kind": "chitchat"
+    },
+    {
+      "user": "yo",
+      "expect_tool": null,
+      "kind": "chitchat"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "v1.0": {
+    "model": "v1.0 (openai/whisper-small base)",
+    "wer": 0.21981981981981982,
+    "rtf": 0.026377924319199674,
+    "audio_secs": 514.907,
+    "n_clips": 125,
+    "engine": "transformers fp16"
+  },
+  "v1.1": {
+    "model": "v1.1 (Cozy LoRA, Hinglish-aware)",
+    "wer": 0.09549549549549549,
+    "rtf": 0.02469053733446708,
+    "audio_secs": 514.907,
+    "n_clips": 125,
+    "engine": "transformers fp16"
+  }
+}
