@@ -399,27 +399,10 @@ SR = 16000
 CHUNK = 1280  # 80 ms - audio capture granularity
 WIN_SAMPLES = SR * 2  # 2 seconds - livekit-wakeword inference window
 
-# Auto-detect the wakeword venv site-packages and add to sys.path.
-# This lets the assistant runtime find livekit-wakeword regardless of
-# which Python is used to launch it. We check for the .venv at:
-#   <Cozy>/.venv/   (project-level venv)
-#   <wakeword>/.venv/  (wakeword venv)
-# The wakeword venv has livekit-wakeword installed (the assistant venv
-# is currently empty).
-for venv_candidate in [WW.parent / ".venv", WW / ".venv"]:
-    sp = venv_candidate / "lib"
-    if sp.exists():
-        for sub in sp.iterdir():
-            if sub.is_dir() and sub.name.startswith("python"):
-                candidate = sub / "site-packages"
-                if candidate.exists() and str(candidate) not in sys.path:
-                    # Keep the assistant venv first. The wakeword venv can
-                    # carry a newer huggingface-hub that is incompatible
-                    # with the pinned Transformers used by the LLM/Kokoro
-                    # stack. Append it only as a dependency fallback.
-                    sys.path.append(str(candidate))
-                    break
-# Also add wakeword itself for in-tree imports
+# The assistant venv installs livekit-wakeword directly. Do not inject the
+# wakeword venv's site-packages: it carries a different Transformers/
+# huggingface-hub stack and would shadow the versions used by Qwen3 and
+# Kokoro. Only the in-tree package path is needed for local model assets.
 if str(WW) not in sys.path:
     sys.path.insert(0, str(WW))
 
