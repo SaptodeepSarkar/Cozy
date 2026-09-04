@@ -34,11 +34,18 @@ def wer(pred_texts, ref_texts):
 
 
 def read_manifest(path: Path):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
-                yield json.loads(line)
+                row = json.loads(line)
+                # Manifests are intentionally portable and store paths
+                # relative to stt-finetune/. Resolve them here so callers can
+                # be launched from the repository root or any working dir.
+                audio = row.get("audio_path")
+                if isinstance(audio, str) and not Path(audio).is_absolute():
+                    row["audio_path"] = str((ROOT / audio).resolve())
+                yield row
 
 
 def write_manifest(path: Path, rows):

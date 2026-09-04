@@ -10,9 +10,11 @@ Run AFTER sft_qwen.py has produced cozy-llm-v1/model.safetensors.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import torch
@@ -41,16 +43,31 @@ def compute_logps(model, input_ids, labels):
 
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--model", default=str(HERE / "model" / "cozy-llm-v1"))
+    ap.add_argument("--pairs", default=str(PAIRS))
+    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--epochs", type=int, default=2)
+    ap.add_argument("--batch-size", type=int, default=1)
+    ap.add_argument("--grad-accum", type=int, default=4)
+    ap.add_argument("--lr", type=float, default=5e-5)
+    ap.add_argument("--max-length", type=int, default=1200)
+    args = ap.parse_args()
+    started = time.perf_counter()
     print("[dpo] loading model...", flush=True)
-    model_dir = HERE / "model" / "cozy-llm-v1"
-    if not (model_dir / "model.safetensors").exists():
+    model_dir = Path(args.model)
+    if not any(model_dir.glob("*.safetensors")):
         print(f"[dpo] no weights at {model_dir}", flush=True)
         sys.exit(1)
+    if not torch.cuda.is_available():
+        ap.error("CUDA is required for DPO")
     tok = AutoTokenizer.from_pretrained(str(model_dir))
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    base = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=torch.bfloat16)
+    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    base = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=dtype,
+                                                 attn_implementation="sdpa")
     base.config.use_cache = False
     base.gradient_checkpointing_enable(
         gradient_checkpointing_kwargs={"use_reentrant": False})
@@ -65,7 +82,7 @@ def main():
     model = model.to("cuda")
     model.print_trainable_parameters()
 
-    pairs = [json.loads(l) for l in open(PAIRS) if l.strip()]
+    pairs = [json.loads(l) for l in Path(args.pairs).read_text().splitlines() if l.strip()]
     print(f"[dpo] {len(pairs)} pairs", flush=True)
 
     # Pre-tokenize: for each pair, concatenate prompt+chosen and prompt+rejected
@@ -73,7 +90,7 @@ def main():
     schema = SCHEMA["tools"]
     def tokenize(messages, response):
         p = tok.apply_chat_template(messages, tools=schema, tokenize=False,
-                                    add_generation_prompt=True)
+                                    add_generation_prompt=True, enable_thinking=False)
         prompt_ids = tok(p, return_tensors=None, add_special_tokens=False)["input_ids"]
         # response may be a list of messages or a string
         if isinstance(response, list):
@@ -85,6 +102,8 @@ def main():
             r_ids = tok(response, return_tensors=None, add_special_tokens=False)["input_ids"]
         full = prompt_ids + r_ids[len(prompt_ids):] if r_ids[:len(prompt_ids)] == prompt_ids else prompt_ids + r_ids
         labels = [-100] * len(prompt_ids) + full[len(prompt_ids):]
+        if len(full) > args.max_length:
+            full, labels = full[-args.max_length:], labels[-args.max_length:]
         return full, labels
 
     print("[dpo] tokenizing pairs...", flush=True)
@@ -97,12 +116,12 @@ def main():
 
     # Pad to max length
     def pad(seqs, pad_id):
-        maxlen = max(len(s) for s in seqs)
+        maxlen = min(args.max_length, max(len(pair[0]) for pair in seqs))
         out_ids, out_lab = [], []
         for ids, lab in seqs:
             pad_n = maxlen - len(ids)
-            out_ids.append(ids + [pad_id] * pad_n)
-            out_lab.append(lab + [-100] * pad_n)
+            out_ids.append(ids[:maxlen] + [pad_id] * max(0, pad_n))
+            out_lab.append(lab[:maxlen] + [-100] * max(0, pad_n))
         return torch.tensor(out_ids, dtype=torch.long), torch.tensor(out_lab, dtype=torch.long)
 
     pad_id = tok.pad_token_id
@@ -110,14 +129,20 @@ def main():
     rejected_ids, rejected_lab = pad(rejected_data, pad_id)
     print(f"[dpo] max seq len: {chosen_ids.shape[1]}", flush=True)
 
-    optim = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=5e-5)
+    optim = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr,
+                              fused=torch.cuda.is_available())
     beta = 0.1
-    n_epochs = 2
+    n_epochs = args.epochs
     n = len(pairs)
-    bsz = 1
+    bsz = args.batch_size
+    if n == 0:
+        print("[dpo] no preference pairs; nothing to train")
+        return
+    model.train()
     for ep in range(n_epochs):
         perm = torch.randperm(n)
-        for s in range(0, n, bsz):
+        optim.zero_grad(set_to_none=True)
+        for step, s in enumerate(range(0, n, bsz), 1):
             idx = perm[s:s+bsz]
             c_batch_ids = chosen_ids[idx].to("cuda")
             c_batch_lab = chosen_lab[idx].to("cuda")
@@ -126,23 +151,32 @@ def main():
 
             chosen_logps = compute_logps(model, c_batch_ids, c_batch_lab)
             with torch.no_grad():
-                ref_chosen_logps = compute_logps(model, c_batch_ids, c_batch_lab)
-                ref_rejected_logps = compute_logps(model, r_batch_ids, r_batch_lab)
+                # Reference probabilities must come from the frozen base, not
+                # the adapter currently being optimized.
+                with model.disable_adapter():
+                    ref_chosen_logps = compute_logps(model, c_batch_ids, c_batch_lab)
+                    ref_rejected_logps = compute_logps(model, r_batch_ids, r_batch_lab)
             rejected_logps = compute_logps(model, r_batch_ids, r_batch_lab)
 
             logits = beta * ((chosen_logps - ref_chosen_logps) - (rejected_logps - ref_rejected_logps))
             loss = -F.logsigmoid(logits).mean()
 
-            optim.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
-            optim.step()
-            print(f"[dpo] ep{ep+1} step {s//bsz+1}/{n//bsz} loss={loss.item():.4f} margin={((chosen_logps - ref_chosen_logps) - (rejected_logps - ref_rejected_logps)).mean().item():.3f}", flush=True)
+            (loss / args.grad_accum).backward()
+            if step % args.grad_accum == 0 or s + bsz >= n:
+                torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
+                optim.step()
+                optim.zero_grad(set_to_none=True)
+            print(f"[dpo] ep{ep+1} step {step}/{(n + bsz - 1)//bsz} loss={loss.item():.4f} margin={((chosen_logps - ref_chosen_logps) - (rejected_logps - ref_rejected_logps)).mean().item():.3f}", flush=True)
 
-    OUT.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(str(OUT))
-    tok.save_pretrained(str(OUT))
-    print(f"[dpo] saved -> {OUT}", flush=True)
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(str(out_dir), safe_serialization=True)
+    tok.save_pretrained(str(out_dir))
+    metrics = {"pairs": n, "epochs": n_epochs, "batch_size": bsz,
+               "grad_accum": args.grad_accum, "elapsed_s": round(time.perf_counter() - started, 2),
+               "peak_gpu_memory_mb": round(torch.cuda.max_memory_allocated() / 1024**2, 1)}
+    (out_dir / "training_metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
+    print(f"[dpo] saved -> {out_dir}", flush=True)
 
 
 if __name__ == "__main__":

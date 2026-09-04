@@ -6,7 +6,9 @@ Run:  .venv/bin/python scripts/train_lora.py [--max-steps 20]   # smoke test
       .venv/bin/python scripts/train_lora.py                    # real run
 """
 import argparse
+import json
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Union
@@ -21,6 +23,7 @@ def build_datasets(max_audio_s=30.0):
     import datasets as hfds
     import librosa
     import numpy as np
+    import soundfile as sf
     from transformers import WhisperProcessor
 
     processor = WhisperProcessor.from_pretrained(BASE_MODEL, language="english",
@@ -28,15 +31,29 @@ def build_datasets(max_audio_s=30.0):
 
     def featurize(rows):
         out = {"input_features": [], "labels": [], "source": []}
-        for r in rows:
-            audio, _ = librosa.load(r["audio_path"], sr=16000, mono=True)
-            if len(audio) > max_audio_s * 16000 or len(audio) < 1600:
-                continue
-            f = processor(audio, sampling_rate=16000).input_features[0]
-            lab = processor.tokenizer(r["text"], truncation=True, max_length=224).input_ids
-            out["input_features"].append(np.asarray(f, dtype=np.float32))
-            out["labels"].append(lab)
-            out["source"].append(r["source"])
+        skipped = 0
+        for index, r in enumerate(rows, 1):
+            try:
+                audio, sr = sf.read(r["audio_path"], dtype="float32", always_2d=False)
+                if getattr(audio, "ndim", 1) > 1:
+                    audio = audio.mean(axis=1)
+                if sr != 16000:
+                    audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+                if len(audio) > max_audio_s * 16000 or len(audio) < 1600:
+                    skipped += 1
+                    continue
+                f = processor(audio, sampling_rate=16000).input_features[0]
+                lab = processor.tokenizer(r["text"], truncation=True, max_length=224).input_ids
+                out["input_features"].append(np.asarray(f, dtype=np.float32))
+                out["labels"].append(lab)
+                out["source"].append(r["source"])
+            except (OSError, RuntimeError, ValueError) as exc:
+                skipped += 1
+                print(f"[data] skipped {r.get('audio_path')}: {exc}", flush=True)
+            if index % 250 == 0:
+                print(f"[data] {index}/{len(rows)} clips", flush=True)
+        if skipped:
+            print(f"[data] skipped {skipped}/{len(rows)} invalid/short clips", flush=True)
         return out
 
     def gen(name):
@@ -90,7 +107,14 @@ def main():
     train_ds, eval_ds, processor = build_datasets()
     print(f"   train={len(train_ds)}  eval={len(eval_ds)}")
 
-    model = WhisperForConditionalGeneration.from_pretrained(BASE_MODEL)
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for STT training")
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    torch.cuda.reset_peak_memory_stats()
+    model = WhisperForConditionalGeneration.from_pretrained(BASE_MODEL, torch_dtype=dtype,
+                                                            low_cpu_mem_usage=True)
     model.config.forced_decoder_ids = None
     model.config.suppress_tokens = []
     model.config.use_cache = False  # required with gradient checkpointing
@@ -135,8 +159,11 @@ def main():
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
         lr_scheduler_type="linear",
-        warmup_steps=40,
-        bf16=True,
+        warmup_ratio=0.05,
+        bf16=dtype == torch.bfloat16,
+        fp16=dtype == torch.float16,
+        tf32=True,
+        optim="adamw_torch_fused",
         gradient_checkpointing=not args.no_grad_ckpt,
         gradient_checkpointing_kwargs=None if args.no_grad_ckpt else {"use_reentrant": False},
         eval_strategy="steps" if args.max_steps < 0 else "no",
@@ -152,6 +179,9 @@ def main():
         logging_steps=1,
         remove_unused_columns=False,
         dataloader_num_workers=args.workers,
+        dataloader_pin_memory=True,
+        dataloader_persistent_workers=args.workers > 0,
+        dataloader_prefetch_factor=2 if args.workers > 0 else None,
         report_to=[],
         label_names=["labels"],
         seed=42,
@@ -187,11 +217,19 @@ def main():
         processing_class=processor,
         compute_metrics=compute_metrics,
     )
-    trainer.train()
+    started = time.perf_counter()
+    train_result = trainer.train()
     metrics = trainer.evaluate(metric_key_prefix="final")
     print("FINAL EVAL:", metrics)
+    model = trainer.model
     model.save_pretrained(str(Path(args.out) / "adapter"))
     processor.save_pretrained(str(Path(args.out) / "adapter"))
+    report = {**train_result.metrics, **metrics, "wall_time_s": round(time.perf_counter() - started, 2),
+              "dtype": str(dtype).removeprefix("torch."),
+              "peak_gpu_memory_mb": round(torch.cuda.max_memory_allocated() / 1024**2, 1),
+              "effective_batch_size": args.batch_size * args.grad_accum}
+    Path(args.out).mkdir(parents=True, exist_ok=True)
+    (Path(args.out) / "training_metrics.json").write_text(json.dumps(report, indent=2, default=str) + "\n")
     print(f"LoRA adapters saved -> {args.out}/adapter")
 
 

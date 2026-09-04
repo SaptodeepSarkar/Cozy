@@ -1,6 +1,24 @@
 # Cozy Release History
 
-## v1.52 (current)
+## v1.53 (working tree)
+**Typed terminal UI + reproducible training pipeline**
+- Replaced the single-file Ink `.mjs` UI with strict TypeScript/TSX components,
+  responsive layout, bounded activity log, and supervised backend restart/error
+  handling (`Ctrl+R`).
+- Fixed the JSON runtime contract to emit `done`, serialized commands, and
+  surfaced audio-loop failures instead of silently losing the voice thread.
+- Added `train.sh`: resumable SFT → RLVR → DPO → STT export/benchmark runs with
+  per-stage logs, manifests, GPU/dtype/peak-VRAM telemetry, and smoke/standard/
+  quality profiles.
+- Added a held-out 30-probe RLVR set and exact tool/name/parameter verifier;
+  fixed DPO's reference model to use the frozen base adapter-disabled path.
+- Fixed LLM dataset tuple rows and train/validation prompt leakage; STT
+  manifests now resolve relative audio paths from any working directory.
+- Restored the wakeword memory-mapped feature dataset module used by classifier
+  training. Synthetic wakeword generation remains an explicit upstream data
+  dependency in this checkout.
+
+## v1.52 (previous)
 **Wake + STT + LLM re-trained from scratch; versioned models/ tree + benchmarks**
 - **hey_cozy v1.1**: 1500 synth + 32 user-voice positives, 1500 adversarial
   + 1500 background negatives, 3 rounds of augmentation, 5000 steps

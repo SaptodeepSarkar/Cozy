@@ -3,6 +3,22 @@
 A local, private, voice-controlled assistant. Say **"hey cozy"** and your PC
 (and your AI agents) come alive — fully offline, no cloud calls.
 
+## v1.53 — typed UI and reproducible training
+
+The default terminal interface is now a strict TypeScript/React + Ink app with
+crash recovery, an always-visible composer, pipeline status, and the animated
+Cozy cat. Model work is reproducible with one resumable command:
+
+```bash
+bash train.sh --profile smoke       # safe 1–2 step validation
+bash train.sh --profile standard   # full LLM + STT pipeline
+bash train.sh --resume              # continue the last run after interruption
+```
+
+Each run writes a revision/GPU manifest and one log per stage under
+`artifacts/training_runs/` (ignored generated output). Use `--dry-run` to review
+commands without starting training.
+
 ## v1.52 — wake word, STT, and LLM all re-trained from scratch
 
 Three versioned model snapshots are now in `models/` (gitignored,

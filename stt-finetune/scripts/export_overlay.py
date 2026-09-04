@@ -74,7 +74,14 @@ def main():
     from faster_whisper import WhisperModel
     m = WhisperModel(str(ct2_out), device="cuda", device_index=0,
                      compute_type="int8_float16")
-    probe = sorted(Path("recordings").glob("session_1/*.wav"))[0]
+    probes = sorted(Path("recordings").glob("session_1/*.wav"))
+    if not probes:
+        probes = sorted(Path("stt-finetune/recordings").glob("session_1/*.wav"))
+    if not probes:
+        print("== No recording available; skipping CT2 sanity transcription")
+        print("\nOK: exports created (run baseline_eval.py for a measured check)")
+        return
+    probe = probes[0]
     segs, _ = m.transcribe(str(probe), language="en", beam_size=1)
     text = " ".join(s.text.strip() for s in segs).strip()
     print(f"== Sanity [{probe.name}]: {text!r}")

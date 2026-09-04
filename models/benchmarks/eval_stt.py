@@ -21,13 +21,9 @@ import os
 os.chdir(REPO / "stt-finetune")
 
 
-def evaluate(name: str, model_path: str | Path, use_ct2: bool = True) -> dict:
+def evaluate(name: str, model_path: str | Path, use_ct2: bool = True, limit: int = 0) -> dict:
     import soundfile as sf
     import librosa
-
-    # Use transformers (fp16) for both. ctranslate2 needs cuBLAS .12 which is
-    # not available on this Arch system; faster-whisper falls back to CPU.
-    use_ct2 = False
 
     if use_ct2:
         from faster_whisper import WhisperModel
@@ -64,7 +60,9 @@ def evaluate(name: str, model_path: str | Path, use_ct2: bool = True) -> dict:
         m.config.forced_decoder_ids = None
         engine = "transformers fp16"
     from jiwer import wer as compute_wer
-    rows = [json.loads(l) for l in open(EVAL_MANIFEST) if l.strip()]
+    rows = [json.loads(l) for l in open(EVAL_MANIFEST, encoding="utf-8") if l.strip()]
+    if limit:
+        rows = rows[:limit]
     refs, hyps, secs, audio_secs = [], [], [], 0.0
     for r in rows:
         audio, sr = sf.read(r["audio_path"], dtype="float32")
@@ -92,12 +90,17 @@ def evaluate(name: str, model_path: str | Path, use_ct2: bool = True) -> dict:
 
 
 def main() -> None:
-    from jiwer import wer as compute_wer
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base", default="openai/whisper-small")
+    parser.add_argument("--model", default=str(REPO / "stt-finetune" / "output" / "hf_finetuned"))
+    parser.add_argument("--ct2", action="store_true", help="evaluate CT2 model instead of HF transformers")
+    parser.add_argument("--limit", type=int, default=0)
+    args = parser.parse_args()
     v1 = evaluate("v1.0 (openai/whisper-small base)",
-                  "openai/whisper-small")
-    # v1.1 = Cozy LoRA, also use the HF format for the same engine.
+                  args.base, use_ct2=False, limit=args.limit)
     v2 = evaluate("v1.1 (Cozy LoRA, Hinglish-aware)",
-                  REPO / "stt-finetune" / "output" / "hf_finetuned_v1.1")
+                  args.model, use_ct2=args.ct2, limit=args.limit)
     summary = {"v1.0": v1, "v1.1": v2}
     (OUT_DIR / "stt_eval.json").write_text(json.dumps(summary, indent=2))
     print("wrote", OUT_DIR / "stt_eval.json")

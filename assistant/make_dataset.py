@@ -12,6 +12,8 @@ agent's real user utterances), those are folded in automatically.
 from __future__ import annotations
 
 import json
+import argparse
+import hashlib
 import random
 from pathlib import Path
 
@@ -151,9 +153,17 @@ def render(tpl, n_map):
 def emit_tool(templates, tool, fixed_params=None, count=30):
     for _ in range(count):
         tpl = rng.choice(templates)
+        template_params = {}
+        if isinstance(tpl, tuple):
+            tpl, template_params = tpl
         subs = dict(fixed_params or {})
         if "{n}" in tpl:
             subs["n"] = rng.choice([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+        for key, value in template_params.items():
+            if value == "n" and "n" in subs:
+                subs[key] = subs["n"]
+            else:
+                subs[key] = value
         text, params = render(tpl, subs)
         if fixed_params:
             params.update(fixed_params)
@@ -203,7 +213,33 @@ EDGE = [
 ]
 
 
+def _write_jsonl(path: Path, rows) -> None:
+    """Atomically replace a JSONL dataset so interrupted builds stay usable."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    tmp.replace(path)
+
+
+def _prompt(row) -> str:
+    return " ".join(row["messages"][1]["content"].lower().split())
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--val-fraction", type=float, default=0.10)
+    parser.add_argument("--augment-copies", type=int, default=2,
+                        help="jittered copies per training prompt")
+    args = parser.parse_args()
+    if not 0.01 <= args.val_fraction < 0.5:
+        parser.error("--val-fraction must be in [0.01, 0.5)")
+    if args.augment_copies < 0:
+        parser.error("--augment-copies cannot be negative")
+    rng.seed(args.seed)
+    samples.clear()
+
     # volume / brightness / media / apps / settings / browser
     emit_tool(VOLUME_CMDS, "system.volume.set")
     emit_tool(HING_VOLUME, "system.volume.set")
@@ -252,45 +288,62 @@ def main() -> None:
     for u, a in EDGE:
         add(u, a)
 
-    # expansion: jittered user-text clones teach phrasing robustness
-    SUFFIXES = ["", " please", " now", " yaar", " jaldi", " abhi", " dude"]
-    extra = []
-    for s in samples:
-        extra.append(s)
-        for _ in range(2):
-            clone = json.loads(json.dumps(s))
-            u0 = clone["messages"][1]["content"]
-            if not isinstance(u0, str):
-                continue
-            suffix = rng.choice(SUFFIXES)
-            if suffix and not u0.endswith(suffix):
-                clone["messages"][1]["content"] = u0 + suffix
-                extra.append(clone)
-    samples.extend(extra)
-
     # fold in real seeds from the STT agent when present
     if SEEDS.exists():
         kept = 0
         for line in SEEDS.read_text().splitlines():
             try:
                 row = json.loads(line)
-                add(row["text"], json.dumps(row["tool"],
-                                            separators=(",", ":")))
+                tool = row["tool"]
+                name = tool.get("name")
+                if name == "none":
+                    add(row["text"], "I can't perform that action yet.")
+                elif name in {item["name"] for item in TOOLS}:
+                    add(row["text"], tool_call(name, tool.get("parameters") or {}))
+                else:
+                    continue
                 kept += 1
             except Exception:
                 continue
         print("merged", kept, "stt seeds")
 
-    rng.shuffle(samples)
+    # Split by normalized prompt *before* augmentation. The old implementation
+    # split after cloning, leaking near-identical prompts into validation and
+    # making eval_loss look much better than real held-out performance.
+    unique = list({_prompt(row): row for row in samples}.values())
+    rng.shuffle(unique)
+    val_n = max(1, int(len(unique) * args.val_fraction))
+    val_rows = unique[:val_n]
+    base_train = unique[val_n:]
+
+    suffixes = [" please", " now", " yaar", " jaldi", " abhi", " dude"]
+    train_rows = list(base_train)
+    for sample in base_train:
+        for _ in range(args.augment_copies):
+            clone = json.loads(json.dumps(sample))
+            user_text = clone["messages"][1]["content"]
+            suffix = rng.choice(suffixes)
+            clone["messages"][1]["content"] = user_text + suffix
+            train_rows.append(clone)
+    rng.shuffle(train_rows)
+
+    overlap = {_prompt(row) for row in train_rows} & {_prompt(row) for row in val_rows}
+    if overlap:
+        raise RuntimeError(f"train/validation prompt leakage: {sorted(overlap)[:3]}")
+
     OUT.mkdir(parents=True, exist_ok=True)
-    val_n = max(1, int(len(samples) * 0.02))
-    with open(OUT / "sft_val.jsonl", "w") as f:
-        for s in samples[:val_n]:
-            f.write(json.dumps(s, ensure_ascii=False) + chr(10))
-    with open(OUT / "sft_train.jsonl", "w") as f:
-        for s in samples[val_n:]:
-            f.write(json.dumps(s, ensure_ascii=False) + chr(10))
-    print("dataset:", len(samples) - val_n, "train /", val_n, "val")
+    train_path = OUT / "sft_train.jsonl"
+    val_path = OUT / "sft_val.jsonl"
+    _write_jsonl(train_path, train_rows)
+    _write_jsonl(val_path, val_rows)
+    digest = hashlib.sha256(train_path.read_bytes() + val_path.read_bytes()).hexdigest()
+    report = {
+        "seed": args.seed, "train_rows": len(train_rows), "validation_rows": len(val_rows),
+        "unique_base_prompts": len(unique), "validation_fraction": args.val_fraction,
+        "augmentation_copies": args.augment_copies, "sha256": digest,
+    }
+    (OUT / "dataset_report.json").write_text(json.dumps(report, indent=2) + "\n")
+    print("dataset:", len(train_rows), "train /", len(val_rows), "val", f"sha256={digest[:12]}")
 
 
 if __name__ == "__main__":

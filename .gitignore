@@ -35,6 +35,7 @@ cozy-llm-v1-dpo/adapter_model.safetensors
 # RLM harness state (generated at runtime, regenerable)
 assistant/data/harness/
 assistant/data/rlm_children/
+artifacts/training_runs/
 # Glaive dataset (downloaded by data prep scripts)
 assistant/data/hf_glaive/
 

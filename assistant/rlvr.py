@@ -1,27 +1,16 @@
 #!/usr/bin/env python3
-"""RLVR/DPO step for Cozy.
+"""Generate verifier-scored preference pairs from held-out Cozy probes.
 
-Loads the SFT-trained cozy-llm-v1, rolls it out on the RLVR probe set, 
-scores each output against the verifier rules, builds DPO preference pairs, 
-and runs DPOTrainer.
-
-The verifier is the agent: scores each output 0/1 on:
-  1. schema_valid: output contains a parseable tool_call when one is needed
-  2. tool_in_schema: the tool name is in team/tool_schema.json
-  3. params_parse: the arguments JSON parses
-  4. affirmation_present: a TTS-able "Done." style phrase is in the next
-     assistant turn (only for tool cases)
-
-A probe gets score 1 iff all relevant checks pass. Anything that scores 0
-becomes "rejected"; the hand-written CHOSEN response is "chosen".
-
-Run AFTER sft_qwen.py has produced cozy-llm-v1/model.safetensors.
+This is the RLVR rollout stage. It does not train: failed SFT rollouts become
+rejected responses paired with deterministic, verifier-approved responses for
+the following DPO stage (`dpo_light.py`).
 """
 from __future__ import annotations
 
+import argparse
 import json
-import re
 import sys
+import time
 from pathlib import Path
 
 import torch
@@ -29,211 +18,94 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-PROBES = HERE / "rlm_harness" / "data" / "rlvr_probes.jsonl"
-OUT_PAIRS = HERE / "data" / "dpo_pairs_short.jsonl"
-SCHEMA = json.loads((REPO / "team" / "tool_schema.json").read_text())
-VALID = {t["name"] for t in SCHEMA["tools"]}
+sys.path.insert(0, str(HERE))
 
-TOOL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
+from evaluation import chosen_message, load_probes, score_probe, strip_thinking  # noqa: E402
 
-
-def parse_tool(text):
-    m = TOOL_RE.search(text)
-    if m:
-        try:
-            call = json.loads(m.group(1))
-        except json.JSONDecodeError:
-            return None
-        name = call.get("name")
-        params = call.get("parameters") or call.get("arguments") or {}
-        if not isinstance(params, dict):
-            try:
-                params = json.loads(params)
-            except Exception:
-                params = {}
-        return {"name": name, "parameters": params, "text": text}
-    depth = 0
-    start = None
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start is not None:
-                chunk = text[start:i + 1]
-                try:
-                    call = json.loads(chunk)
-                except json.JSONDecodeError:
-                    start = None
-                    continue
-                if isinstance(call, dict) and isinstance(call.get("name"), str):
-                    params = call.get("parameters") or call.get("arguments") or {}
-                    if isinstance(params, str):
-                        try:
-                            params = json.loads(params)
-                        except Exception:
-                            params = {}
-                    return {"name": call["name"], "parameters": params, "text": text}
-                start = None
-    return None
+SYSTEM = (
+    "You are Cozy, a voice assistant running fully offline on the user's laptop. "
+    "Respond fast and short. When the user wants an action, call exactly one tool "
+    "with compact JSON. For plain chat, answer briefly and warmly without tools."
+)
 
 
-def strip_think(text):
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model", default=str(HERE / "model" / "cozy-llm-v1"))
+    parser.add_argument("--probes", default=str(HERE / "data" / "rlvr_probes.jsonl"))
+    parser.add_argument("--out", default=str(HERE / "data" / "dpo_pairs_short.jsonl"))
+    parser.add_argument("--metrics-out", default=str(HERE / "data" / "rlvr_metrics.json"))
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--max-new-tokens", type=int, default=128)
+    parser.add_argument("--limit", type=int, default=0)
+    args = parser.parse_args()
 
+    if not torch.cuda.is_available():
+        parser.error("CUDA is required for RLVR rollouts")
+    model_dir = Path(args.model)
+    if not any(model_dir.glob("*.safetensors")):
+        parser.error(f"no model weights found in {model_dir}; run SFT first")
 
-def score(output_text, kind, expected):
-    text = strip_think(output_text)
-    if kind == "tool":
-        call = parse_tool(text)
-        if call is None:
-            return 0, "no tool call"
-        if call["name"] not in VALID:
-            return 0, "tool " + repr(call["name"]) + " not in schema"
-        if not isinstance(call["parameters"], dict):
-            return 0, "params not a dict"
-        if expected and expected[0].get("tool_calls"):
-            exp_call = expected[0]["tool_calls"][0]["function"]
-            if call["name"] != exp_call["name"]:
-                return 0, "wrong tool: got " + call["name"] + ", want " + exp_call["name"]
-        return 1, "ok"
-    else:
-        if not text or text in ("...", "<|im_end|>"):
-            return 0, "empty chat"
-        return 1, "ok"
+    schema = json.loads((REPO / "team" / "tool_schema.json").read_text())["tools"]
+    valid_tools = {tool["name"] for tool in schema}
+    probes = load_probes(Path(args.probes))
+    if args.limit:
+        probes = probes[:args.limit]
 
-
-def main():
-    print("[rlvr] loading model...", flush=True)
-    model_dir = HERE / "model" / "cozy-llm-v1"
-    if not (model_dir / "model.safetensors").exists():
-        print("[rlvr] ERROR: no weights at " + str(model_dir) + "/model.safetensors", flush=True)
-        print("[rlvr] Run assistant/sft_qwen.py first.", flush=True)
-        sys.exit(1)
-    tok = AutoTokenizer.from_pretrained(str(model_dir))
-    model = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=torch.bfloat16)
-    model = model.to("cuda").eval()
-
-    schema = SCHEMA["tools"]
-    sys_msg = ("You are Cozy, a voice assistant running fully offline on the "
-               "user's laptop. Respond fast and short. When the user wants "
-               "an action, call exactly one tool with compact JSON. For "
-               "plain chat, answer briefly and warmly without tools.")
-
-    probes = [json.loads(l) for l in open(PROBES) if l.strip()]
-    print("[rlvr] " + str(len(probes)) + " probes", flush=True)
+    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    tokenizer = AutoTokenizer.from_pretrained(str(model_dir))
+    tokenizer.pad_token = tokenizer.pad_token or tokenizer.eos_token
+    tokenizer.padding_side = "left"
+    model = AutoModelForCausalLM.from_pretrained(
+        str(model_dir), torch_dtype=dtype, attn_implementation="sdpa", low_cpu_mem_usage=True,
+    ).to("cuda").eval()
+    torch.backends.cuda.matmul.allow_tf32 = True
 
     pairs = []
-    for i, p in enumerate(probes, 1):
-        prompt = p["prompt"]
-        kind = p["kind"]
-        chosen = p["chosen"]
-        chat = [{"role":"system","content":sys_msg}, {"role":"user","content":prompt}]
-        ptxt = tok.apply_chat_template(chat, tools=schema, tokenize=False,
-                                        add_generation_prompt=True, enable_thinking=False)
-        ids = tok(ptxt, return_tensors="pt").to(model.device)
+    results = []
+    started = time.perf_counter()
+    for offset in range(0, len(probes), args.batch_size):
+        batch = probes[offset:offset + args.batch_size]
+        chats = [[{"role": "system", "content": SYSTEM}, {"role": "user", "content": probe["user"]}] for probe in batch]
+        rendered = [tokenizer.apply_chat_template(
+            chat, tools=schema, tokenize=False, add_generation_prompt=True, enable_thinking=False,
+        ) for chat in chats]
+        inputs = tokenizer(rendered, return_tensors="pt", padding=True).to(model.device)
         with torch.inference_mode():
-            out = model.generate(**ids, max_new_tokens=160, do_sample=False,
-                                 pad_token_id=tok.eos_token_id)
-        text = tok.decode(out[0][ids["input_ids"].shape[1]:], skip_special_tokens=False)
-        s, reason = score(text, kind, chosen)
-        if s == 0:
-            pairs.append({
-                "prompt": chat,
-                "chosen": chosen,
-                "rejected": [{"role":"assistant", "content": strip_think(text) or "..."}],
-                "tools": schema,
-                "reason": reason,
-            })
-        if i % 5 == 0:
-            print("[rlvr] " + str(i) + "/" + str(len(probes)) + " (pairs so far: " + str(len(pairs)) + ")", flush=True)
+            generated = model.generate(
+                **inputs, max_new_tokens=args.max_new_tokens, do_sample=False,
+                pad_token_id=tokenizer.pad_token_id,
+            )
+        prompt_width = inputs["input_ids"].shape[1]
+        outputs = tokenizer.batch_decode(generated[:, prompt_width:], skip_special_tokens=False)
+        for probe, chat, output in zip(batch, chats, outputs):
+            passed, reason = score_probe(output, probe, valid_tools)
+            results.append({"id": probe["id"], "passed": passed, "reason": reason, "output": strip_thinking(output)})
+            if not passed:
+                pairs.append({
+                    "prompt": chat,
+                    "chosen": [chosen_message(probe)],
+                    "rejected": [{"role": "assistant", "content": strip_thinking(output) or "..."}],
+                    "tools": schema,
+                    "probe_id": probe["id"],
+                    "reason": reason,
+                })
+        print(f"[rlvr] {min(offset + len(batch), len(probes))}/{len(probes)} · failures={len(pairs)}", flush=True)
 
-    print("[rlvr] built " + str(len(pairs)) + " preference pairs", flush=True)
-    OUT_PAIRS.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUT_PAIRS, "w") as f:
-        for p in pairs:
-            f.write(json.dumps(p, ensure_ascii=False) + "\n")
-    print("[rlvr] wrote " + str(OUT_PAIRS), flush=True)
-
-    if not pairs:
-        print("[rlvr] no pairs to train on - SFT model already nails every probe!", flush=True)
-        return
-
-    print("[rlvr] running DPO...", flush=True)
-    # Free the SFT eval model from GPU before loading DPO trainer
-    del model
-    torch.cuda.empty_cache()
-    import gc; gc.collect()
-
-    from trl import DPOTrainer, DPOConfig
-    from datasets import load_dataset
-    from peft import LoraConfig, get_peft_model
-
-    base = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=torch.bfloat16)
-    base.config.use_cache = False
-    base.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-    lora = LoraConfig(
-        r=16, lora_alpha=32, lora_dropout=0.05, bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=["q_proj","k_proj","v_proj","o_proj",
-                        "gate_proj","up_proj","down_proj"],
-    )
-    model_dpo = get_peft_model(base, lora)
-
-    cfg = DPOConfig(
-        output_dir=str(HERE / "model" / "dpo_runs"),
-        num_train_epochs=1,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
-        learning_rate=5e-5,
-        fp16=True,
-        max_grad_norm=1.0,
-        logging_steps=5,
-        save_strategy="no",
-        report_to=[],
-        seed=42,
-        max_length=1200,
-        beta=0.1,
-    )
-    ds = load_dataset("json", data_files=str(OUT_PAIRS), split="train")
-    # When using PEFT, passing ref_model=None tells TRL to use the base model
-    # (with adapter disabled) as the reference, sharing weights and saving GPU.
-    trainer = DPOTrainer(
-        model=model_dpo,
-        ref_model=None,
-        args=cfg,
-        train_dataset=ds,
-        processing_class=tok,
-    )
-    trainer.train()
-
-    out_adapter = HERE / "model" / "cozy-llm-v1-dpo"
-    out_adapter.mkdir(parents=True, exist_ok=True)
-    trainer.model.save_pretrained(str(out_adapter))
-    tok.save_pretrained(str(out_adapter))
-    print("[rlvr] saved DPO adapter -> " + str(out_adapter), flush=True)
-
-    print("[rlvr] re-verifying on probes...", flush=True)
-    del model, trainer
-    torch.cuda.empty_cache()
-    from peft import PeftModel
-    base2 = AutoModelForCausalLM.from_pretrained(str(model_dir), torch_dtype=torch.bfloat16)
-    m2 = PeftModel.from_pretrained(base2, str(out_adapter)).to("cuda").eval()
-    n_ok = 0
-    for p in probes:
-        chat = [{"role":"system","content":sys_msg}, {"role":"user","content":p["prompt"]}]
-        ptxt = tok.apply_chat_template(chat, tools=schema, tokenize=False,
-                                        add_generation_prompt=True, enable_thinking=False)
-        ids = tok(ptxt, return_tensors="pt").to(m2.device)
-        with torch.inference_mode():
-            out = m2.generate(**ids, max_new_tokens=160, do_sample=False,
-                                pad_token_id=tok.eos_token_id)
-        text = tok.decode(out[0][ids["input_ids"].shape[1]:], skip_special_tokens=False)
-        s, _ = score(text, p["kind"], p["chosen"])
-        n_ok += s
-    print("[rlvr] post-DPO: " + str(n_ok) + "/" + str(len(probes)) + " probes pass", flush=True)
+    output_path = Path(args.out)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output_path.with_suffix(output_path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        for pair in pairs:
+            handle.write(json.dumps(pair, ensure_ascii=False) + "\n")
+    tmp.replace(output_path)
+    metrics = {
+        "model": str(model_dir), "n_probes": len(probes), "passed": len(probes) - len(pairs),
+        "failed": len(pairs), "accuracy": (len(probes) - len(pairs)) / max(1, len(probes)),
+        "elapsed_s": round(time.perf_counter() - started, 3), "results": results,
+    }
+    Path(args.metrics_out).write_text(json.dumps(metrics, indent=2) + "\n")
+    print(f"[rlvr] accuracy={metrics['accuracy']:.1%}; wrote {len(pairs)} pairs to {output_path}")
 
 
 if __name__ == "__main__":
