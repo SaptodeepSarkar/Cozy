@@ -24,4 +24,11 @@ route_audio() {
 }
 
 route_audio
-pactl subscribe 2>/dev/null | while read -r _; do route_audio; done
+
+# Do not use `pactl subscribe` here. PipeWire emits a burst of graph events
+# while Bluetooth profiles and filter nodes are negotiating; reacting to every
+# event creates a tight process loop and can starve the desktop shell. A small
+# polling interval is plenty for device switching and keeps this service cheap.
+while sleep 5; do
+  route_audio
+done
