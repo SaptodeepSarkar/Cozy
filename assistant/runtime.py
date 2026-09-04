@@ -315,6 +315,8 @@ def run_json_mode(harness, executor, threshold=0.5):
         os.close(fd)
         tmp = _P(tmp_name)
         sf.write(str(tmp), pcm, 16000, subtype="PCM_16")
+        if os.environ.get("COZY_AUDIO_DEBUG_WAV", "0") == "1":
+            sf.write("/tmp/cozy_last_capture.wav", pcm, 16000, subtype="PCM_16")
         try:
             text = stt.transcribe_file(str(tmp))
         except Exception as exc:

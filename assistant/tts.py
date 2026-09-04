@@ -20,7 +20,10 @@ Config: assistant/voice.cfg
 from __future__ import annotations
 
 import os
+import json
+import sys
 import threading
+import warnings
 from pathlib import Path
 
 DEFAULT_VOICE = "af_heart"
@@ -37,6 +40,18 @@ _worker_started = False
 
 import queue as _queue
 _speak_queue: "_queue.Queue[str | None]" = _queue.Queue()
+
+warnings.filterwarnings("ignore", message=r".*dropout option adds dropout.*")
+warnings.filterwarnings("ignore", message=r".*weight_norm.*deprecated.*")
+
+def _runtime_error(message: str) -> None:
+    if os.environ.get("COZY_TUI_MODE") != "node":
+        return
+    try:
+        sys.stdout.write(json.dumps({"kind": "error", "msg": message}) + "\n")
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 
 def _load_cfg():
@@ -79,6 +94,7 @@ def _get_pipeline():
             return _pipeline
         except Exception as exc:
             print(f"[tts] Kokoro load failed: {exc}", flush=True)
+            _runtime_error(f"TTS unavailable: {exc}")
             print("[tts] falling back to silent mode", flush=True)
             _pipeline = None
             return None
