@@ -316,6 +316,17 @@ then **thinking** after STT completes. Capture has a bounded
 detection, unique temporary WAV files, and structured transcription errors so
 a stalled microphone cannot silently freeze the session.
 
+## Linux microphone noise and Bluetooth routing
+
+On this Arch/PipeWire desktop, run `bash audio-fix.sh` once with OBS closed.
+It configures a user-local RNNoise virtual microphone, prevents the internal
+mic from clipping, and enables automatic routing: Bluetooth headset playback
+and mic when available; otherwise built-in playback and the denoised internal
+mic. It uses PipeWire and `noise-suppression-for-voice`, not EasyEffects.
+
+Bluetooth microphones require headset/HFP mode while in use, so playback
+quality can be lower than A2DP during a voice command.
+
 If the host has CUDA 13 but the CTranslate2 wheel expects CUDA 12
 (`libcublas.so.12`), Cozy automatically falls back to the Hugging Face Whisper
 engine instead of failing the command. Install a CUDA-12-compatible

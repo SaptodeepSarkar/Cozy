@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Use Bluetooth for playback + capture when a headset is connected; otherwise
+# use the internal sink and RNNoise-filtered internal microphone.
+set -u
+raw_source="alsa_input.pci-0000_00_1f.3.analog-stereo"
+raw_sink="alsa_output.pci-0000_00_1f.3.analog-stereo"
+
+first_name() {
+  pactl list short "$1" 2>/dev/null | awk -v pattern="$2" '$2 ~ pattern { print $2; exit }'
+}
+
+route_audio() {
+  local bt_sink bt_source fallback_source wanted_sink wanted_source
+  bt_sink="$(first_name sinks '^bluez_output')"
+  bt_source="$(first_name sources '^bluez_input')"
+  fallback_source="$(first_name sources '^effect_output[.](cozy-)?rnnoise$')"
+  if [[ -n "$bt_sink" ]]; then wanted_sink="$bt_sink";
+  elif pactl list short sinks | awk '{print $2}' | grep -qx "$raw_sink"; then wanted_sink="$raw_sink"; fi
+  if [[ -n "$bt_source" ]]; then wanted_source="$bt_source";
+  elif [[ -n "$fallback_source" ]]; then wanted_source="$fallback_source";
+  elif pactl list short sources | awk '{print $2}' | grep -qx "$raw_source"; then wanted_source="$raw_source"; fi
+  [[ -z "${wanted_sink:-}" || "$(pactl get-default-sink 2>/dev/null)" == "$wanted_sink" ]] || pactl set-default-sink "$wanted_sink" || true
+  [[ -z "${wanted_source:-}" || "$(pactl get-default-source 2>/dev/null)" == "$wanted_source" ]] || pactl set-default-source "$wanted_source" || true
+}
+
+route_audio
+pactl subscribe 2>/dev/null | while read -r _; do route_audio; done

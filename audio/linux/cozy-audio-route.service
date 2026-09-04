@@ -1,0 +1,12 @@
+[Unit]
+Description=Route Cozy audio to Bluetooth when available
+After=pipewire-pulse.service wireplumber.service
+Wants=pipewire-pulse.service
+
+[Service]
+ExecStart=%h/.local/bin/cozy-audio-route
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep Cozy's internal microphone gain below the clipping point
+After=pipewire.service wireplumber.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/amixer -c 0 sset "Internal Mic Boost" 0
+ExecStart=/usr/bin/amixer -c 0 sset Capture 45
+
+[Install]
+WantedBy=default.target
