@@ -327,6 +327,10 @@ mic. It uses PipeWire and `noise-suppression-for-voice`, not EasyEffects.
 Bluetooth microphones require headset/HFP mode while in use, so playback
 quality can be lower than A2DP during a voice command.
 
+If OBS reports `Error creating screencast session: Timeout was reached`, close
+OBS and run `bash obs-fix.sh`; this refreshes the Hyprland/PipeWire portal
+session without changing OBS scenes or sources.
+
 If the host has CUDA 13 but the CTranslate2 wheel expects CUDA 12
 (`libcublas.so.12`), Cozy automatically falls back to the Hugging Face Whisper
 engine instead of failing the command. Install a CUDA-12-compatible
