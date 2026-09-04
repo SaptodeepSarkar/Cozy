@@ -138,7 +138,8 @@ def run_json_mode(harness, executor, threshold=0.5):
     with contextlib.redirect_stdout(io.StringIO()), \
          contextlib.redirect_stderr(io.StringIO()):
         wake = WakeWordModel(models=[str(WW_PATH)])
-        stt = CozySTT()
+        stt_plugin = harness.plugins.get("stt") if harness else None
+        stt = getattr(stt_plugin, "_stt", None) or CozySTT()
     wake_name = next(iter(wake._classifiers.keys()))
 
     # Signal: all loaded

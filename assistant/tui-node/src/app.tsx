@@ -160,7 +160,7 @@ export function App({ eventSource, send, restart, stop }: AppProps) {
   });
 
   const activityRows = useMemo(() => Math.max(2, rows - 16), [rows]);
-  if (state.phase === "starting") return <Box flexDirection="column" paddingX={1} height={rows}><Header state={state} frame={frame} /><LoadingScreen state={state} frame={frame} /></Box>;
+  if (state.phase === "starting") return <Box flexDirection="column" paddingX={1} height={rows}><LoadingScreen state={state} frame={frame} /></Box>;
   return (
     <Box flexDirection="column" paddingX={1} height={rows}>
       <Header state={state} frame={frame} />

@@ -43,6 +43,13 @@ class STTPlugin(Plugin):
              contextlib.redirect_stderr(io.StringIO()):
             from stt import CozySTT
             self._stt = CozySTT()
+            # Load the speech engine during the startup gate, not on the
+            # first command. If CT2 cannot load its CUDA runtime, CozySTT
+            # will transparently select its configured fallback on demand.
+            try:
+                self._stt._get_ct2()
+            except Exception:
+                pass
         _emit("warmup", model="stt", state="done")
 
     def _do_free(self):
