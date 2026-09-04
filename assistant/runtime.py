@@ -231,6 +231,12 @@ def run_json_mode(harness, executor, threshold=0.5):
 
     import sounddevice as sd
     import numpy as np
+    # PortAudio's ALSA `default` device can open the physical card directly,
+    # which makes BlueZ switch profiles and interrupts Spotify/YouTube. The
+    # PipeWire device preserves the desktop's selected defaults and keeps the
+    # stream inside the session mixer.
+    pipewire_device = next((i for i, d in enumerate(sd.query_devices())
+                            if str(d.get("name", "")).strip().lower() == "pipewire"), None)
     def audio_cb(indata, *_):
         audio_q.put(indata.copy())
 
@@ -239,8 +245,11 @@ def run_json_mode(harness, executor, threshold=0.5):
         audio_buf = np.zeros(WIN, dtype=np.int16)
         audio_buf_fill = 0
         cooldown_until = 0.0
-        with sd.InputStream(samplerate=SR, channels=1, dtype="int16",
-                            blocksize=CHUNK, callback=audio_cb):
+        stream_args = dict(samplerate=SR, channels=1, dtype="int16",
+                           blocksize=CHUNK, callback=audio_cb)
+        if pipewire_device is not None:
+            stream_args["device"] = pipewire_device
+        with sd.InputStream(**stream_args):
             while not stop_flag[0]:
                 try:
                     chunk = audio_q.get(timeout=0.5)

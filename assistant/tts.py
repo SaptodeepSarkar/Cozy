@@ -139,7 +139,13 @@ def _play(samples, sr: int) -> None:
             sr = file_sr
         else:
             data = samples
-        sd.play(data, samplerate=sr, blocking=True)
+        # Use PortAudio's PipeWire bridge rather than ALSA `default`; opening
+        # the latter can force a Bluetooth headset into headset mode and mute
+        # other applications. PipeWire still applies the user's current
+        # default sink without changing it.
+        device = next((i for i, d in enumerate(sd.query_devices())
+                       if str(d.get("name", "")).strip().lower() == "pipewire"), None)
+        sd.play(data, samplerate=sr, device=device, blocking=True)
     except Exception as exc:
         print(f"[tts] play failed: {exc}")
 
