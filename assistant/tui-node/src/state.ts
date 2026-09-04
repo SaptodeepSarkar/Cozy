@@ -1,7 +1,7 @@
 import type { EngineEvent, ModelName, ModelState } from "./protocol.js";
 import { numberField, textField } from "./protocol.js";
 
-export type Phase = "starting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+export type Phase = "starting" | "ready" | "listening" | "capturing" | "thinking" | "speaking" | "error";
 
 export interface CozyState {
   phase: Phase;
@@ -24,7 +24,7 @@ export const initialState: CozyState = {
 };
 
 const loggedKinds = new Set([
-  "backend_crash", "backend_log", "error", "heard", "llm", "rejected",
+  "backend_crash", "error", "heard", "llm", "rejected",
   "tool_error", "tool_fail", "tool_result", "user_msg",
 ]);
 
@@ -49,6 +49,12 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
       return { ...state, audioLevel: Math.max(0, Math.min(1, numberField(event, "score"))) };
     case "wake":
       return withEvent({ ...state, phase: "listening", transcript: "", response: "" }, event);
+    case "stt_start":
+      return { ...state, phase: "capturing", transcript: "Listening…", response: "" };
+    case "capture_level":
+      return { ...state, audioLevel: Math.max(0, Math.min(1, numberField(event, "level"))) };
+    case "transcribed":
+      return withEvent({ ...state, phase: "thinking", transcript: textField(event, "text") }, event);
     case "heard":
       return withEvent({ ...state, phase: "thinking", transcript: textField(event, "text"), response: "" }, event);
     case "llm":
@@ -71,8 +77,6 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
       const message = textField(event, "message") || "The assistant engine stopped unexpectedly.";
       return withEvent({ ...state, phase: "error", fatalError: message }, event);
     }
-    case "backend_log":
-      return withEvent(state, event);
     default:
       return state;
   }

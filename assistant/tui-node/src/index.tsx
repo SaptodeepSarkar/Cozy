@@ -25,6 +25,12 @@ class EngineSupervisor {
     for (const listener of this.listeners) listener(event);
   }
 
+  private shouldShowDiagnostic(message: string) {
+    const s = message.toLowerCase();
+    if (/torch_dtype.*deprecated|use `dtype` instead|unauthenticated requests|hf_token|huggingface_hub|futurewarning|userwarning/.test(s)) return false;
+    return /error|failed|traceback|exception|crash|stopped/.test(s);
+  }
+
   start = () => {
     this.stopping = false;
     this.emit({ kind: "backend_start", ts: Date.now() / 1000 });
@@ -43,14 +49,14 @@ class EngineSupervisor {
         if (!line.trim()) continue;
         const event = parseEngineEvent(line);
         if (event) this.emit(event);
-        else this.emit({ kind: "backend_log", message: line.trim(), ts: Date.now() / 1000 });
+        else if (this.shouldShowDiagnostic(line)) this.emit({ kind: "backend_log", message: line.trim(), ts: Date.now() / 1000 });
       }
     });
     this.child.stderr.on("data", chunk => {
       stderrBuffer += chunk.toString();
       const lines = stderrBuffer.split("\n");
       stderrBuffer = lines.pop() || "";
-      for (const line of lines.slice(-5)) if (line.trim()) this.emit({ kind: "backend_log", message: line.trim(), ts: Date.now() / 1000 });
+      for (const line of lines.slice(-5)) if (line.trim() && this.shouldShowDiagnostic(line)) this.emit({ kind: "backend_log", message: line.trim(), ts: Date.now() / 1000 });
     });
     this.child.on("error", error => this.emit({ kind: "backend_crash", message: error.message, ts: Date.now() / 1000 }));
     this.child.on("exit", (code, signal) => {

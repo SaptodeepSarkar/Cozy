@@ -18,6 +18,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PY="$ROOT/assistant/.venv/bin/python"
 
+# Convenience symlinks installed by install-global.sh.
+case "$(basename "$0")" in
+  cozystop) set -- --stop ;;
+  cozystatus) set -- --status ;;
+esac
+
 case "${1:-}" in
   "" | --tui)
     # Launch the Node Ink TUI by default.

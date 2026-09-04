@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import re
 import select
@@ -20,9 +21,17 @@ import signal
 import sys
 import threading
 import time
+import tempfile
+import warnings
 from pathlib import Path
 
 import numpy as np
+
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+warnings.filterwarnings("ignore", message=r".*torch_dtype.*deprecated.*")
+warnings.filterwarnings("ignore", message=r".*unauthenticated requests.*HF Hub.*")
 
 HERE = Path(__file__).resolve().parent
 WW = HERE.parent / "wakeword"
@@ -153,7 +162,7 @@ def run_json_mode(harness, executor, threshold=0.5):
                 text = cmd.get("text", "")
                 if text:
                     # Run the same flow as a voice command
-                    handle_user_text(text)
+                    threading.Thread(target=handle_user_text, args=(text,), daemon=True).start()
 
     command_lock = threading.Lock()
 
@@ -243,24 +252,29 @@ def run_json_mode(harness, executor, threshold=0.5):
                 # Capture 7s + VAD
                 text = _capture(stt, audio_q, audio_buf, audio_buf_fill)
                 if not text:
+                    audio_buf[:] = 0
+                    audio_buf_fill = 0
                     continue
                 # Self-feedback guard
                 if _is_self_feedback(harness, text):
                     json_emit("rejected", reason="self-feedback (TTS echo)")
                     cooldown_until = _time.time() + 6.0
+                    audio_buf[:] = 0
+                    audio_buf_fill = 0
                     continue
-                handle_user_text(text)
+                threading.Thread(target=handle_user_text, args=(text,), daemon=True).start()
                 audio_buf[:] = 0
                 audio_buf_fill = 0
 
     def _capture(stt, audio_q, audio_buf, audio_buf_fill):
         import soundfile as sf
         from pathlib import Path as _P
+        json_emit("stt_start")
         frames = [audio_buf.copy()]
         silent_for = 0.0
         spoken = False
         t0 = _time.time()
-        while _time.time() - t0 < 7.0:
+        while _time.time() - t0 < float(os.environ.get("COZY_CAPTURE_TIMEOUT", "10")):
             try:
                 chunk = audio_q.get(timeout=0.05)
             except _q.Empty:
@@ -268,8 +282,9 @@ def run_json_mode(harness, executor, threshold=0.5):
             if chunk is not None:
                 pcm = chunk[:, 0]
                 frames.append(pcm.copy())
-                level = float(np.abs(pcm).mean())
-                if level > 600:
+                level = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2)))
+                json_emit("capture_level", level=min(1.0, level / 2000.0))
+                if level > 180:
                     spoken = True
                     silent_for = 0.0
                 elif spoken:
@@ -281,17 +296,24 @@ def run_json_mode(harness, executor, threshold=0.5):
         if energy < 100:
             json_emit("rejected", reason=f"low energy ({energy:.0f})")
             return ""
-        tmp = _P("/tmp/cozy_cmd.wav")
+        fd, tmp_name = tempfile.mkstemp(prefix="cozy_cmd_", suffix=".wav")
+        os.close(fd)
+        tmp = _P(tmp_name)
         sf.write(str(tmp), pcm, 16000, subtype="PCM_16")
         try:
             text = stt.transcribe_file(str(tmp))
-        except Exception:
+        except Exception as exc:
+            json_emit("error", msg=f"transcription failed: {exc}")
             return ""
+        finally:
+            try: tmp.unlink()
+            except OSError: pass
         text = (text or "").strip()
         if len(text) < 3:
             return ""
         if not any(c.isalpha() for c in text):
             return ""
+        json_emit("transcribed", text=text)
         return text
 
     def _is_self_feedback(harness, text):

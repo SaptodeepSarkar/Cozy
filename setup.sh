@@ -130,3 +130,7 @@ echo "  cd stt-finetune && source env.sh && .venv/bin/python scripts/train_lora.
 echo
 echo "Train the LLM (function-calling SFT):"
 echo "  cd assistant && .venv/bin/python sft_qwen.py"
+
+if [[ "${COZY_SKIP_GLOBAL:-0}" != "1" ]]; then
+    bash "$ROOT/install-global.sh"
+fi

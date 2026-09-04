@@ -1,5 +1,15 @@
 # Cozy Release History
 
+## v1.54 (working tree)
+**Global launcher, quiet diagnostics, and resilient wake capture**
+- Added user-local global installation (`install-global.sh`) with convenience
+  stop/status commands.
+- Dependency deprecation/auth/progress chatter is filtered from the TUI while
+  actionable backend failures remain visible.
+- Wake capture now exposes live levels, uses adaptive RMS speech detection,
+  bounded timeout and unique temporary files, and runs command handling off the
+  audio thread so listening remains responsive.
+
 ## v1.53 (working tree)
 **Typed terminal UI + reproducible training pipeline**
 - Replaced the single-file Ink `.mjs` UI with strict TypeScript/TSX components,

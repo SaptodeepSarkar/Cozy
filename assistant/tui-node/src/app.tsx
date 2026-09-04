@@ -25,7 +25,7 @@ function useTerminalSize() {
 }
 
 const phaseLabels: Record<Phase, string> = {
-  starting: "warming up", ready: "ready", listening: "listening",
+  starting: "warming up", ready: "ready", listening: "listening", capturing: "capturing",
   thinking: "thinking", speaking: "speaking", error: "needs attention",
 };
 
@@ -101,7 +101,8 @@ function FocusCard({ state }: { state: CozyState }) {
   let label = "TIP";
   let body: React.ReactNode = <>Type a command at any time. Press <Text bold>Ctrl+R</Text> to restart the engine.</>;
   let color: string = theme.muted;
-  if (state.phase === "listening") { label = "LISTENING"; color = theme.accent; body = <><Meter level={state.audioLevel} />  speak naturally</>; }
+  if (state.phase === "listening") { label = "LISTENING"; color = theme.accent; body = <><Meter level={state.audioLevel} />  say your command</>; }
+  if (state.phase === "capturing") { label = "CAPTURING"; color = theme.accent; body = <><Meter level={state.audioLevel} />  transcribing your voice…</>; }
   else if (state.phase === "thinking") { label = "WORKING"; color = theme.warning; body = state.transcript || "Choosing the best action…"; }
   else if (state.phase === "speaking") { label = "COZY"; color = theme.accent; body = state.response || "Speaking…"; }
   else if (state.response) { label = "COZY"; color = theme.success; body = state.response; }
@@ -119,7 +120,7 @@ export function App({ eventSource, send, restart, stop }: AppProps) {
 
   useEffect(() => eventSource.subscribe(dispatch), [eventSource]);
   useEffect(() => {
-    const active = ["starting", "listening", "thinking", "speaking"].includes(state.phase);
+    const active = ["starting", "listening", "capturing", "thinking", "speaking"].includes(state.phase);
     const timer = setInterval(() => setFrame(value => value + 1), active ? 140 : 650);
     return () => clearInterval(timer);
   }, [state.phase]);

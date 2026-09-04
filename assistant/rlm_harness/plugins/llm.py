@@ -39,6 +39,7 @@ class LLMPlugin(Plugin):
         self._model_dir = ASSISTANT / "model" / "cozy-llm-v1"
         self._dpo_dir = ASSISTANT / "model" / "cozy-llm-v1-dpo"
         self._use_dpo = (self._dpo_dir / "adapter_model.safetensors").exists()
+        self._tool_schema = None
 
     def _do_load(self):
         if not (self._model_dir / "model.safetensors").exists():
@@ -76,8 +77,12 @@ class LLMPlugin(Plugin):
     def generate(self, messages, max_new_tokens=200, on_token=None):
         assert self._loaded, "call .load() first"
         import re
-        schema = json.loads(
-            (ASSISTANT.parent / "team" / "tool_schema.json").read_text())["tools"]
+        # Tool definitions are static across turns; parse once so generation
+        # spends its time on model tokens rather than filesystem/JSON work.
+        if self._tool_schema is None:
+            self._tool_schema = json.loads(
+                (ASSISTANT.parent / "team" / "tool_schema.json").read_text())["tools"]
+        schema = self._tool_schema
         prompt = self._tok.apply_chat_template(
             messages, tools=schema, tokenize=False,
             add_generation_prompt=True, enable_thinking=False)
@@ -86,7 +91,7 @@ class LLMPlugin(Plugin):
             with self._torch.inference_mode():
                 out = self._model.generate(
                     **ids, max_new_tokens=max_new_tokens, do_sample=False,
-                    pad_token_id=self._tok.eos_token_id)
+                    pad_token_id=self._tok.eos_token_id, use_cache=True)
             text = self._tok.decode(
                 out[0][ids["input_ids"].shape[1]:], skip_special_tokens=False).strip()
         else:
@@ -96,9 +101,11 @@ class LLMPlugin(Plugin):
             gen_kwargs = dict(
                 input_ids=ids["input_ids"],
                 attention_mask=ids["attention_mask"],
+                streamer=streamer,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
                 pad_token_id=self._tok.eos_token_id,
+                use_cache=True,
             )
             import threading
             t = threading.Thread(

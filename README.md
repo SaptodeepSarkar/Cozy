@@ -303,6 +303,19 @@ Cozy/
 - `assistant/README.md` — assistant runtime modes
 - `team/STATUS.md` — multi-agent status board
 
+## Global `cozy` command
+
+From the repository root, run `bash install-global.sh`. This creates a
+user-local `~/.local/bin/cozy` symlink (plus `cozystop` and `cozystatus`) and
+never needs sudo. Ensure `~/.local/bin` is on `PATH`; new shells source
+`cozy.shell` automatically after `setup.sh`.
+
+After the wake word, the UI changes to **capturing** while audio is buffered,
+then **thinking** after STT completes. Capture has a bounded
+`COZY_CAPTURE_TIMEOUT` (10 seconds by default), adaptive speech energy
+detection, unique temporary WAV files, and structured transcription errors so
+a stalled microphone cannot silently freeze the session.
+
 ## Versioning
 
 We use `vX.YZ` tags at the repo level for "full repo snapshot" releases, with
