@@ -33,7 +33,7 @@ def _which_any(*names):
 
 def system_volume_set(params):
     level = max(0, min(100, int(params.get("level", 50))))
-    f = str(level) / 100.0
+    f = level / 100.0
     # PipeWire (Arch default), then PulseAudio compat, then ALSA fallback.
     ok, out = _run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{f:.2f}"])
     if not ok:

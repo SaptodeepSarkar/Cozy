@@ -26,7 +26,7 @@ def _try_route(text: str):
             # get current then set
             r = subprocess.run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
                                 capture_output=True, text=True, timeout=5)
-            m = re.search(r"(d+)%", r.stdout)
+            m = re.search(r"(\d+)%", r.stdout)
             cur = int(m.group(1)) if m else 50
             new = max(0, min(100, cur + args["delta"]))
             return exec_tool("system.volume.set", {"level": new})
