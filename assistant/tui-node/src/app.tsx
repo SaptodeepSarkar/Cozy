@@ -110,6 +110,20 @@ function FocusCard({ state }: { state: CozyState }) {
   return <Box borderStyle="round" borderColor={color} paddingX={1}><Text color={color} bold>{label}  </Text><Text color={theme.primary} wrap="truncate-end">{body}</Text></Box>;
 }
 
+function LoadingScreen({ state, frame }: { state: CozyState; frame: number }) {
+  const names: ModelName[] = ["wake", "stt", "llm", "tts"];
+  return <Box flexDirection="column" alignItems="center" justifyContent="center" flexGrow={1}>
+    <Text color={theme.primary} bold>{CAT_FRAMES[frame % CAT_FRAMES.length]}</Text>
+    <Text color={theme.accent} bold>{SPINNER[frame % SPINNER.length]}  Loading Cozy models…</Text>
+    <Text color={theme.dim}>Please wait until the pipeline is ready.</Text>
+    <Box marginTop={1} flexDirection="column">
+      {names.map(name => <Text key={name} color={state.models[name] === "done" ? theme.success : state.models[name] === "failed" ? theme.danger : theme.warning}>
+        {state.models[name] === "done" ? "●" : state.models[name] === "failed" ? "×" : "◐"} {name}
+      </Text>)}
+    </Box>
+  </Box>;
+}
+
 export function App({ eventSource, send, restart, stop }: AppProps) {
   const [state, dispatch] = useReducer(reduceEvent, initialState);
   const [input, setInput] = useState("");
@@ -146,6 +160,7 @@ export function App({ eventSource, send, restart, stop }: AppProps) {
   });
 
   const activityRows = useMemo(() => Math.max(2, rows - 16), [rows]);
+  if (state.phase === "starting") return <Box flexDirection="column" paddingX={1} height={rows}><Header state={state} frame={frame} /><LoadingScreen state={state} frame={frame} /></Box>;
   return (
     <Box flexDirection="column" paddingX={1} height={rows}>
       <Header state={state} frame={frame} />

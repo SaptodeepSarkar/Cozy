@@ -104,6 +104,7 @@ def run_json_mode(harness, executor, threshold=0.5):
         return
 
     # Parallel warmup
+    load_failures = []
     def _loader(name):
         p_obj = harness.plugins.get(name)
         if p_obj is None:
@@ -116,6 +117,7 @@ def run_json_mode(harness, executor, threshold=0.5):
             json_emit("warmup", model=name, state="done")
             _flush_emit()
         except Exception as exc:
+            load_failures.append(name)
             json_emit("warmup", model=name, state="failed")
             json_emit("error", msg=f"{name} load: {exc}")
             _flush_emit()
@@ -128,6 +130,9 @@ def run_json_mode(harness, executor, threshold=0.5):
     # Wait for wake + STT before starting audio capture
     for t in threads:
         t.join(timeout=60)
+    if any(t.is_alive() for t in threads) or load_failures:
+        json_emit("error", msg="Model startup did not complete: " + ", ".join(load_failures or ["timeout"]))
+        return
 
     # Now load the wake + STT objects
     with contextlib.redirect_stdout(io.StringIO()), \
