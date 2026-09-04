@@ -53,10 +53,16 @@ class CozySTT:
     def transcribe_array(self, audio, hinglish_hint=False):
         """audio: float32 16 kHz mono."""
         if self.prefer in ("auto", "ct2") and CT2_DIR.exists():
-            text = self._run_ct2(audio)
-            if text:
-                self.last_engine = "ct2"
-                return text
+            try:
+                text = self._run_ct2(audio)
+                if text:
+                    self.last_engine = "ct2"
+                    return text
+            except (OSError, RuntimeError, ImportError) as exc:
+                # CTranslate2 wheels are commonly built for CUDA 12 while a
+                # host may have CUDA 13 (libcublas.so.12 missing). Do not
+                # strand the voice loop: fall through to the HF CUDA engine.
+                self.ct2_error = str(exc)
         if HF_DIR.exists():
             text = self._run_hf(audio)
             self.last_engine = "hf"

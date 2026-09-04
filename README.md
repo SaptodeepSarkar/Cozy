@@ -316,6 +316,11 @@ then **thinking** after STT completes. Capture has a bounded
 detection, unique temporary WAV files, and structured transcription errors so
 a stalled microphone cannot silently freeze the session.
 
+If the host has CUDA 13 but the CTranslate2 wheel expects CUDA 12
+(`libcublas.so.12`), Cozy automatically falls back to the Hugging Face Whisper
+engine instead of failing the command. Install a CUDA-12-compatible
+CTranslate2 build later if you want the faster CT2 path.
+
 ## Versioning
 
 We use `vX.YZ` tags at the repo level for "full repo snapshot" releases, with
