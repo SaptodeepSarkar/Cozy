@@ -18,7 +18,10 @@ dependencies = [
     # STT
     "faster-whisper>=1.0.0",
     "librosa>=0.10",
-    "transformers>=4.40",
+    # Kokoro currently imports AlbertModel, which was removed from the
+    # Transformers 5.x top-level API. Keep the voice and STT stacks on the
+    # compatible 4.x line.
+    "transformers>=4.57,<5",
     "torch>=2.5",
     "torchaudio>=2.5",
     # LLM

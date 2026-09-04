@@ -46,7 +46,7 @@ if [[ ! -d stt-finetune/.venv ]]; then
 fi
 uv pip install --python stt-finetune/.venv/bin/python --quiet --upgrade pip
 uv pip install --python stt-finetune/.venv/bin/python --quiet \
-    transformers datasets accelerate peft jiwer soundfile librosa \
+    'transformers>=4.57,<5' datasets accelerate peft jiwer soundfile librosa \
     ctranslate2 faster-whisper pyarrow
 
 # 3. assistant venv: wake + STT + LLM runtime deps
@@ -57,7 +57,7 @@ fi
 uv pip install --python assistant/.venv/bin/python --quiet --upgrade pip
 uv pip install --python assistant/.venv/bin/python --quiet \
     livekit-wakeword pyaudio sounddevice soundfile \
-    faster-whisper librosa transformers torch torchaudio \
+    faster-whisper librosa 'transformers>=4.57,<5' torch torchaudio \
     huggingface-hub safetensors tokenizers pyyaml numpy \
     peft trl accelerate kokoro silero-vad
 
