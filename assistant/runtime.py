@@ -140,6 +140,13 @@ def run_json_mode(harness, executor, threshold=0.5):
         wake = WakeWordModel(models=[str(WW_PATH)])
         stt_plugin = harness.plugins.get("stt") if harness else None
         stt = getattr(stt_plugin, "_stt", None) or CozySTT()
+    vad_model = None
+    try:
+        from silero_vad import load_silero_vad
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            vad_model = load_silero_vad(onnx=True)
+    except Exception:
+        pass
     wake_name = next(iter(wake._classifiers.keys()))
 
     # Signal: all loaded
@@ -291,15 +298,29 @@ def run_json_mode(harness, executor, threshold=0.5):
             if chunk is not None:
                 pcm = chunk[:, 0]
                 frames.append(pcm.copy())
+                chunk_vad_speech = 0
+                chunk_vad_quiet = 0
                 level = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2)))
                 levels.append(level)
                 baseline = float(np.median(levels[: min(len(levels), 5)])) if levels else 0.0
                 speech_floor = max(120.0, baseline * 2.2)
                 json_emit("capture_level", level=min(1.0, level / 2000.0))
-                if len(levels) >= 2 and level > speech_floor:
+                if vad_model is not None:
+                    import torch
+                    block = pcm.astype(np.float32) / 32768.0
+                    for start in range(0, len(block), 512):
+                        part = block[start:start + 512]
+                        if len(part) < 512: part = np.pad(part, (0, 512 - len(part)))
+                        try:
+                            probability = float(vad_model(torch.from_numpy(part), 16000).item())
+                        except Exception:
+                            probability = 1.0 if level > speech_floor else 0.0
+                        if probability >= 0.5: chunk_vad_speech += 1
+                        else: chunk_vad_quiet += 1
+                if (chunk_vad_speech >= 1) or (vad_model is None and len(levels) >= 2 and level > speech_floor):
                     spoken = True
                     silent_for = 0.0
-                elif spoken:
+                elif spoken and (vad_model is None or chunk_vad_quiet >= 1):
                     silent_for += len(pcm) / 16000
             if spoken and silent_for >= 1.0:
                 break

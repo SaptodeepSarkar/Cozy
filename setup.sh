@@ -59,7 +59,7 @@ uv pip install --python assistant/.venv/bin/python --quiet \
     livekit-wakeword pyaudio sounddevice soundfile \
     faster-whisper librosa transformers torch torchaudio \
     huggingface-hub safetensors tokenizers pyyaml numpy \
-    peft trl accelerate kokoro
+    peft trl accelerate kokoro silero-vad
 
 # 4. Download the LLM base model if it's not already on disk.
 # Qwen3-0.6B is small (~1.2 GB) and free. Required for `cozy` to start.
@@ -88,6 +88,17 @@ PY
     fi
 fi
 
+# Download Kokoro's neural TTS weights during setup so the first response is
+# not delayed by a network fetch. Set SKIP_TTS_MODEL_DOWNLOAD=1 to defer it.
+if [[ "${SKIP_TTS_MODEL_DOWNLOAD:-0}" != "1" ]]; then
+    echo "[setup] Fetching Kokoro-82M TTS weights ..."
+    HF_HUB_DISABLE_PROGRESS_BARS=1 assistant/.venv/bin/python - <<'PY'
+from huggingface_hub import snapshot_download
+snapshot_download("hexgrad/Kokoro-82M", allow_patterns=["*.json", "*.pth", "voices/*.pt", "*.md"])
+print("[setup] Kokoro weights ready")
+PY
+fi
+
 # Install the cozy shell alias if it isn't already sourced.
 ALIAS_LINE="source \"$ROOT/cozy.shell\""
 for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
@@ -96,10 +107,8 @@ for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
         printf "\n# Cozy voice assistant\n%s\n" "$ALIAS_LINE" >> "$rc"
     fi
 done
-# Kokoro-82M is the TTS engine. It's a Python pip package and the
-# model auto-downloads from hexgrad/Kokoro-82M on first speak().
-# No system package needed.
-echo "  TTS: Kokoro-82M (pip package, model downloads on first use)"
+# Kokoro-82M is installed and downloaded above; no system package needed.
+echo "  TTS: Kokoro-82M (weights cached locally)"
 echo
 # 4. Terminal UI: deterministic install from package-lock.json.
 if command -v npm >/dev/null 2>&1; then
