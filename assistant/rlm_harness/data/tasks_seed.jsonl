@@ -51,3 +51,15 @@
 {"id": "seed-0050", "category": "screenshot", "difficulty": "easy", "text": "take a screenshot"}
 {"id": "seed-0051", "category": "settings", "difficulty": "easy", "text": "open wifi settings"}
 {"id": "seed-0052", "category": "browser", "difficulty": "medium", "text": "open github.com"}
+{"id": "diagnostics-0-0", "text": "How much disk space is free?", "category": "diagnostics", "difficulty": "easy", "hint": "system.disk.usage"}
+{"id": "diagnostics-0-1", "text": "Check storage usage", "category": "diagnostics", "difficulty": "easy", "hint": "system.disk.usage"}
+{"id": "diagnostics-0-2", "text": "Show available disk space", "category": "diagnostics", "difficulty": "easy", "hint": "system.disk.usage"}
+{"id": "diagnostics-1-0", "text": "What operating system is this?", "category": "diagnostics", "difficulty": "easy", "hint": "system.info"}
+{"id": "diagnostics-1-1", "text": "Show system information", "category": "diagnostics", "difficulty": "easy", "hint": "system.info"}
+{"id": "diagnostics-1-2", "text": "Tell me about this computer", "category": "diagnostics", "difficulty": "easy", "hint": "system.info"}
+{"id": "diagnostics-2-0", "text": "How much RAM is available?", "category": "diagnostics", "difficulty": "easy", "hint": "system.memory.status"}
+{"id": "diagnostics-2-1", "text": "Check memory usage", "category": "diagnostics", "difficulty": "easy", "hint": "system.memory.status"}
+{"id": "diagnostics-2-2", "text": "Show free memory", "category": "diagnostics", "difficulty": "easy", "hint": "system.memory.status"}
+{"id": "diagnostics-3-0", "text": "How long has this computer been running?", "category": "diagnostics", "difficulty": "easy", "hint": "system.uptime"}
+{"id": "diagnostics-3-1", "text": "Show system uptime", "category": "diagnostics", "difficulty": "easy", "hint": "system.uptime"}
+{"id": "diagnostics-3-2", "text": "Time since last boot?", "category": "diagnostics", "difficulty": "easy", "hint": "system.uptime"}

@@ -6,16 +6,20 @@
   "scripts": {
     "start": "tsx src/index.tsx",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/*.test.ts",
-    "check": "npm run typecheck && npm test"
+    "test": "tsx --test src/*.test.ts src/*.test.tsx",
+    "check": "npm run typecheck && npm test",
+    "preview": "tsx src/preview.tsx"
   },
   "dependencies": {
     "ink": "^5.0.0",
-    "react": "^18.3.0"
+    "react": "^18.3.0",
+    "string-width": "^5.1.2",
+    "wrap-ansi": "^8.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.0",
+    "ink-testing-library": "^4.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

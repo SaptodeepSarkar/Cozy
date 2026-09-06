@@ -9,6 +9,7 @@ authors = [{ name = "Saptodeep Sarkar" }]
 dependencies = [
     # Core
     "numpy>=1.24",
+    "textual>=8.0",
     # Wake word (livekit-wakeword v0.2.0 from local wakeword/)
     "livekit-wakeword",
     "pyaudio>=0.2.14",
@@ -17,7 +18,11 @@ dependencies = [
     "soundfile>=0.12",
     # STT
     "faster-whisper>=1.0.0",
+    # CTranslate2 4.x is built against CUDA 12 even when the host uses CUDA 13.
+    "nvidia-cublas-cu12>=12.4,<13; sys_platform == 'linux'",
     "librosa>=0.10",
+    # Kokoro TTS
+    "kokoro>=0.9",
     # Kokoro currently imports AlbertModel, which was removed from the
     # Transformers 5.x top-level API. Keep the voice and STT stacks on the
     # compatible 4.x line.

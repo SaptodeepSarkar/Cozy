@@ -5,6 +5,7 @@ Usage:
     stt = CozySTT()
     text = stt.transcribe_array(samples_16k_float32)   # or .transcribe_file(path)
 """
+import ctypes
 import sys
 from pathlib import Path
 
@@ -15,13 +16,35 @@ HF_DIR = STT_ROOT / "output" / "hf_finetuned"
 sys.path.insert(0, str(STT_ROOT / "scripts"))
 
 
+def _preload_ct2_cuda12():
+    """Load CTranslate2's CUDA 12 BLAS beside a CUDA 13 system install."""
+    try:
+        import nvidia.cublas
+    except ImportError:
+        return
+    # NVIDIA's wheels expose ``nvidia.cublas`` as a namespace package, so
+    # ``__file__`` is normally None.  Its package path points at the directory
+    # that owns the bundled ``lib/`` tree.
+    package_paths = list(nvidia.cublas.__path__)
+    if not package_paths:
+        return
+    lib_dir = Path(package_paths[0]).resolve() / "lib"
+    for name in ("libcublasLt.so.12", "libcublas.so.12"):
+        path = lib_dir / name
+        if path.exists():
+            ctypes.CDLL(str(path), mode=ctypes.RTLD_GLOBAL)
+
+
 class CozySTT:
     def __init__(self, prefer_engine="auto"):
         self._ct2 = None
         self._ct2_device = None
         self._hf = None
+        if prefer_engine not in {"auto", "ct2", "hf"}:
+            raise ValueError("prefer_engine must be auto, ct2, or hf")
         self.prefer = prefer_engine
         self.last_engine = None
+        self.ct2_error = None
 
     # ---- engines -------------------------------------------------------
     def _get_ct2(self):
@@ -29,6 +52,7 @@ class CozySTT:
             from faster_whisper import WhisperModel
             import torch
             if torch.cuda.is_available():
+                _preload_ct2_cuda12()
                 self._ct2 = WhisperModel(str(CT2_DIR), device="cuda",
                                          device_index=0, compute_type="int8_float16")
                 self._ct2_device = "cuda"
@@ -48,7 +72,7 @@ class CozySTT:
                                       WhisperProcessor)
             self._hf_proc = WhisperProcessor.from_pretrained(str(HF_DIR))
             self._hf = WhisperForConditionalGeneration.from_pretrained(
-                str(HF_DIR), torch_dtype=torch.float16).to("cuda")
+                str(HF_DIR), torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
             self._librosa = librosa
         return self._hf
 
@@ -56,16 +80,22 @@ class CozySTT:
     def transcribe_file(self, path, hinglish_hint=False):
         import librosa
         audio, _ = librosa.load(str(path), sr=16000, mono=True)
-        return self.transcribe_array(audio)
+        return self.transcribe_array(audio, hinglish_hint=hinglish_hint)
 
     def transcribe_array(self, audio, hinglish_hint=False):
         """audio: float32 16 kHz mono."""
+        import numpy as np
+        audio = np.asarray(audio, dtype=np.float32)
+        if audio.ndim != 1 or not np.isfinite(audio).all():
+            raise ValueError("audio must be finite mono samples at 16 kHz")
+        if not audio.size or not np.any(audio):
+            return ""
+        self._language = None if hinglish_hint else "en"
         if self.prefer in ("auto", "ct2") and CT2_DIR.exists():
             try:
                 text = self._run_ct2(audio)
-                if text:
-                    self.last_engine = "ct2"
-                    return text
+                self.last_engine = "ct2-cpu" if self._ct2_device == "cpu" else "ct2"
+                return text
             except (OSError, RuntimeError, ImportError) as exc:
                 # CTranslate2 wheels are commonly built for CUDA 12 while a
                 # host may have CUDA 13 (libcublas.so.12 missing). Do not
@@ -78,10 +108,10 @@ class CozySTT:
                 try:
                     from faster_whisper import WhisperModel
                     self._ct2 = WhisperModel(str(CT2_DIR), device="cpu", compute_type="int8")
+                    self._ct2_device = "cpu"
                     text = self._run_ct2(audio)
-                    if text:
-                        self.last_engine = "ct2-cpu"
-                        return text
+                    self.last_engine = "ct2-cpu"
+                    return text
                 except (OSError, RuntimeError, ImportError):
                     self._ct2 = None
         if HF_DIR.exists():
@@ -90,10 +120,33 @@ class CozySTT:
             return text
         raise RuntimeError("No finetuned STT model found under stt-finetune/output")
 
+    def warmup(self):
+        """Load the engine and execute one small inference during startup."""
+        import numpy as np
+        if self.prefer == "hf" or not CT2_DIR.exists():
+            self._get_hf()
+            return
+        silence = np.zeros(16000, dtype=np.float32)
+        try:
+            self._run_ct2(silence)
+        except (OSError, RuntimeError, ImportError) as exc:
+            self.ct2_error = str(exc)
+            try:
+                from faster_whisper import WhisperModel
+                self._ct2 = WhisperModel(str(CT2_DIR), device="cpu", compute_type="int8")
+                self._ct2_device = "cpu"
+                self._run_ct2(silence)
+            except (OSError, RuntimeError, ImportError):
+                self._ct2 = None
+                if not HF_DIR.exists():
+                    raise
+                self._get_hf()
+
     # ---- internals -----------------------------------------------------
     def _run_ct2(self, audio):
         model = self._get_ct2()
-        segs, _ = model.transcribe(audio, language="en", beam_size=1)
+        segs, _ = model.transcribe(audio, language=getattr(self, "_language", "en"), beam_size=3,
+                                   condition_on_previous_text=False, vad_filter=True)
         return " ".join(s.text.strip() for s in segs).strip()
 
     def _run_hf(self, audio):
@@ -103,10 +156,24 @@ class CozySTT:
         feats = self._hf_proc(np.asarray(audio, dtype=np.float32),
                               sampling_rate=16000,
                               return_tensors="pt").input_features
-        feats = feats.to("cuda", torch.float16)
-        ids = model.generate(feats, language="english", task="transcribe",
+        feats = feats.to(device=model.device, dtype=model.dtype)
+        ids = model.generate(feats, language=getattr(self, "_language", "en"), task="transcribe",
                              max_new_tokens=224)
         return self._hf_proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
+
+    def close(self):
+        """Release CT2/CUDA objects while the Python runtime is intact."""
+        self._ct2 = None
+        self._hf = None
+        self._hf_proc = None
+        self._librosa = None
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+        except (ImportError, RuntimeError):
+            pass
 
 
 if __name__ == "__main__":

@@ -136,14 +136,6 @@
       "desc": "Lock the screen (gnome-screensaver / loginctl)"
     },
     {
-      "name": "system.shutdown",
-      "params": {
-        "delay_minutes": "int optional, default 0 = now",
-        "confirm": "bool, must be true. Ask the user before calling."
-      },
-      "desc": "Schedule a shutdown. Requires explicit user confirmation."
-    },
-    {
       "name": "system.cancel_shutdown",
       "params": {},
       "desc": "Cancel a pending shutdown"
@@ -202,7 +194,29 @@
         "name": "string, app name or window title fragment"
       },
       "desc": "Switch focus to an already-open app"
+    },
+    {
+      "name": "system.disk.usage",
+      "params": {
+        "path": "string - filesystem path, defaults to home"
+      },
+      "desc": "Report disk capacity and free space"
+    },
+    {
+      "name": "system.info",
+      "params": {},
+      "desc": "Report OS, architecture, hostname and CPU count"
+    },
+    {
+      "name": "system.memory.status",
+      "params": {},
+      "desc": "Report RAM and swap totals and availability in bytes"
+    },
+    {
+      "name": "system.uptime",
+      "params": {},
+      "desc": "Report time since the computer booted"
     }
   ],
-  "notes": "Router maps STT text -> LLM (Qwen3-0.6B fine-tune); LLM emits {tool, params} JSON or none. Hinglish variants welcome in training data. v2: added timer.set, alarm.set, reminder.set, date.now, system.lock, system.shutdown (confirm-gated), system.cancel_shutdown, system.battery.status, system.wifi.status, clipboard.read/write, note.add/read, calc.compute, app.list_running, app.switch."
+  "notes": "Router maps STT text -> LLM (Qwen3-0.6B fine-tune); LLM emits {tool, params} JSON or none. Hinglish variants welcome in training data. Destructive power actions are intentionally excluded from the LLM tool schema."
 }

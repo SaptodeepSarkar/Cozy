@@ -15,6 +15,8 @@ class EngineSupervisor {
   private child?: ChildProcessWithoutNullStreams;
   private listeners = new Set<(event: EngineEvent) => void>();
   private stopping = false;
+  private restarting = false;
+  private killTimer?: NodeJS.Timeout;
 
   subscribe = (listener: (event: EngineEvent) => void) => {
     this.listeners.add(listener);
@@ -39,6 +41,7 @@ class EngineSupervisor {
 
   start = () => {
     this.stopping = false;
+    this.restarting = false;
     this.emit({ kind: "backend_start", ts: Date.now() / 1000 });
     const forwarded = process.argv.slice(2).filter(arg => arg !== "--tui" && arg !== "--json-events");
     this.child = spawn(python, [runtime, "--json-events", ...forwarded], {
@@ -66,8 +69,14 @@ class EngineSupervisor {
     });
     this.child.on("error", error => this.emit({ kind: "backend_crash", message: error.message, ts: Date.now() / 1000 }));
     this.child.on("exit", (code, signal) => {
+      if (this.killTimer) clearTimeout(this.killTimer);
+      this.killTimer = undefined;
       this.child = undefined;
-      if (!this.stopping) this.emit({ kind: "backend_crash", message: `Engine exited (${signal || `code ${code ?? "unknown"}`}).`, ts: Date.now() / 1000 });
+      if (this.restarting) {
+        this.start();
+      } else if (!this.stopping) {
+        this.emit({ kind: "backend_crash", message: `Engine exited (${signal || `code ${code ?? "unknown"}`}).`, ts: Date.now() / 1000 });
+      }
     });
   };
 
@@ -79,18 +88,28 @@ class EngineSupervisor {
 
   stop = () => {
     this.stopping = true;
-    this.child?.kill("SIGTERM");
-    this.child = undefined;
+    this.restarting = false;
+    if (!this.child) return;
+    this.child.stdin.end();
+    this.child.kill("SIGTERM");
+    this.killTimer = setTimeout(() => this.child?.kill("SIGKILL"), 35_000);
   };
 
   restart = () => {
-    this.stop();
-    setTimeout(this.start, 150);
+    if (!this.child) { this.start(); return; }
+    this.stopping = true;
+    this.restarting = true;
+    this.child.stdin.end();
+    this.child.kill("SIGTERM");
+    // Inference cannot be interrupted safely mid-kernel. Give it time to
+    // finish, then use SIGKILL rather than entering Python finalization with
+    // live ONNX/CT2 threads. The replacement starts only after exit.
+    this.killTimer = setTimeout(() => this.child?.kill("SIGKILL"), 35_000);
   };
 }
 
 const supervisor = new EngineSupervisor();
-const instance = render(<App eventSource={supervisor} send={supervisor.send} restart={supervisor.restart} stop={supervisor.stop} />);
+const instance = render(<App eventSource={supervisor} send={supervisor.send} restart={supervisor.restart} stop={supervisor.stop} />, { exitOnCtrlC: false });
 supervisor.start();
 process.once("SIGTERM", () => { supervisor.stop(); instance.unmount(); });
-process.once("SIGINT", () => { supervisor.stop(); instance.unmount(); process.exit(0); });
+process.once("SIGINT", () => { supervisor.stop(); instance.unmount(); });

@@ -37,9 +37,11 @@ _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _pipeline = None
 _pipeline_lock = threading.Lock()
 _worker_started = False
+_worker_thread = None
+_speaking = threading.Event()
 
 import queue as _queue
-_speak_queue: "_queue.Queue[str | None]" = _queue.Queue()
+_speak_queue: "_queue.Queue[str | None]" = _queue.Queue(maxsize=8)
 
 warnings.filterwarnings("ignore", message=r".*dropout option adds dropout.*")
 warnings.filterwarnings("ignore", message=r".*weight_norm.*deprecated.*")
@@ -129,8 +131,8 @@ def _synthesize(text: str) -> "tuple[object, int] | None":
 
 def _play(samples, sr: int) -> None:
     try:
-        import sounddevice as sd
         import soundfile as sf
+        from audio_io import play
         if samples is None:
             return
         # If cached, load from file
@@ -139,19 +141,13 @@ def _play(samples, sr: int) -> None:
             sr = file_sr
         else:
             data = samples
-        # Use PortAudio's PipeWire bridge rather than ALSA `default`; opening
-        # the latter can force a Bluetooth headset into headset mode and mute
-        # other applications. PipeWire still applies the user's current
-        # default sink without changing it.
-        device = next((i for i, d in enumerate(sd.query_devices())
-                       if str(d.get("name", "")).strip().lower() == "pipewire"), None)
-        sd.play(data, samplerate=sr, device=device, blocking=True)
+        play(data, sr)
     except Exception as exc:
         print(f"[tts] play failed: {exc}")
 
 
 def _ensure_worker():
-    global _worker_started
+    global _worker_started, _worker_thread
     if _worker_started:
         return
     def loop():
@@ -160,6 +156,7 @@ def _ensure_worker():
             if text is None:
                 break
             try:
+                _speaking.set()
                 # Cache hit?
                 safe = "".join(c if c.isalnum() else "_" for c in text)[:64]
                 cache_path = _CACHE_DIR / f"{safe}.wav"
@@ -179,10 +176,35 @@ def _ensure_worker():
             except Exception as exc:
                 print(f"[tts] worker error: {exc}")
             finally:
+                _speaking.clear()
                 _speak_queue.task_done()
     t = threading.Thread(target=loop, daemon=True, name="cozy-tts")
     t.start()
+    _worker_thread = t
     _worker_started = True
+
+
+def shutdown(timeout: float = 5.0) -> bool:
+    """Stop the speech worker before native libraries are finalized."""
+    global _pipeline, _worker_started, _worker_thread
+    if _worker_started:
+        # Discard queued speech during shutdown so the sentinel is guaranteed
+        # to fit and exit is not delayed by several old replies.
+        while True:
+            try:
+                _speak_queue.get_nowait()
+                _speak_queue.task_done()
+            except _queue.Empty:
+                break
+        _speak_queue.put_nowait(None)
+        if _worker_thread is not None:
+            _worker_thread.join(timeout=timeout)
+            if _worker_thread.is_alive():
+                return False
+    _worker_thread = None
+    _worker_started = False
+    _pipeline = None
+    return True
 
 
 def speak(text: str, blocking: bool = False) -> None:
@@ -192,9 +214,17 @@ def speak(text: str, blocking: bool = False) -> None:
     if not is_available():
         return
     _ensure_worker()
-    _speak_queue.put(text)
+    try:
+        _speak_queue.put_nowait(text)
+    except _queue.Full:
+        _runtime_error("TTS queue is full; dropping reply")
+        return
     if blocking:
         _speak_queue.join()
+
+
+def is_speaking() -> bool:
+    return _speaking.is_set()
 
 
 def say(text: str) -> None:

@@ -124,9 +124,9 @@ PROG_FAILED    = "✗"   # failed
 
 
 def strip_special_tokens(text):
-    text = re.sub(r"<\\|im_end\\|>", "", text)
-    text = re.sub(r"<\\|im_start\\|>", "", text)
-    text = re.sub(r"<\\|endoftext\\|>", "", text)
+    text = re.sub(r"<\|im_end\|>", "", text)
+    text = re.sub(r"<\|im_start\|>", "", text)
+    text = re.sub(r"<\|endoftext\|>", "", text)
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
     return text.strip()
 
@@ -786,7 +786,7 @@ class CozyApp(App):
         from livekit.wakeword import WakeWordModel
         from stt import CozySTT
         from tts import is_available, speak as tts_speak
-        import sounddevice as sd
+        from audio_io import PipeWireInputStream
         import numpy as np
         WW_PATH = Path(__file__).resolve().parent.parent / "wakeword" / "output" / "hey_cozy" / "hey_cozy.onnx"
         if not WW_PATH.exists():
@@ -814,8 +814,8 @@ class CozyApp(App):
             nonlocal audio_buf, audio_buf_fill
             cooldown_until = 0.0
             try:
-                with sd.InputStream(samplerate=SR, channels=1, dtype="int16",
-                                    blocksize=CHUNK, callback=audio_cb):
+                with PipeWireInputStream(samplerate=SR, channels=1, dtype="int16",
+                                         blocksize=CHUNK, callback=audio_cb):
                     while not self.stop_flag:
                         try:
                             chunk = audio_q.get(timeout=0.5)
@@ -903,20 +903,22 @@ class CozyApp(App):
                 break
         if not last:
             return False
-        a = set(last.lower().split())
-        b = set(text.lower().split())
-        if not a or not b:
+        from difflib import SequenceMatcher
+        a = " ".join(re.findall(r"[a-z0-9]+", last.lower()))
+        b = " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+        if len(a.split()) < 4 or len(b.split()) < 4:
             return False
-        return len(a & b) / min(len(a), len(b)) > 0.5
+        return SequenceMatcher(None, a, b).ratio() >= 0.88
 
     def _capture_and_transcribe(self, stt, audio_q, audio_buf, audio_buf_fill):
         import numpy as np
         import soundfile as sf
         from pathlib import Path as _P
-        frames = [audio_buf.copy()]
+        frames = []
         silent_for = 0.0
         spoken = False
         t0 = time.time()
+        silence_after = float(os.environ.get("COZY_SILENCE_AFTER", "0.7"))
         while time.time() - t0 < 7.0:
             try:
                 chunk = audio_q.get(timeout=0.05)
@@ -931,7 +933,7 @@ class CozyApp(App):
                     silent_for = 0.0
                 elif spoken:
                     silent_for += len(pcm) / 16000
-            if spoken and silent_for >= 1.0:
+            if spoken and silent_for >= silence_after:
                 break
         pcm = np.concatenate(frames) if len(frames) > 1 else np.zeros(16000, np.int16)
         energy = float(np.abs(pcm).mean())

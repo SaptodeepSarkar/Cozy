@@ -21,6 +21,11 @@ systemctl --user disable --now cozy-audio-route.service >/dev/null 2>&1 || true
 systemctl --user restart pipewire pipewire-pulse wireplumber
 sleep 3
 pactl set-source-volume alsa_input.pci-0000_00_1f.3.analog-stereo 100%
-echo "Cozy audio fix applied; existing defaults preserved."
+if pactl list short sources | awk '{print $2}' | grep -qx effect_output.cozy-rnnoise; then
+  pactl set-default-source effect_output.cozy-rnnoise
+elif pactl list short sources | awk '{print $2}' | grep -qx effect_output.rnnoise; then
+  pactl set-default-source effect_output.rnnoise
+fi
+echo "Cozy audio fix applied; the noise-cancelled virtual microphone is the default."
 echo "Default sink: $(pactl get-default-sink 2>/dev/null || echo unknown)"
 echo "Default source: $(pactl get-default-source 2>/dev/null || echo unknown)"

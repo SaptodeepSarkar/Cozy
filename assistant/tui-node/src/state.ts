@@ -1,13 +1,16 @@
 import type { EngineEvent, ModelName, ModelState } from "./protocol.js";
 import { numberField, textField } from "./protocol.js";
 
-export type Phase = "starting" | "ready" | "listening" | "capturing" | "thinking" | "speaking" | "error";
+export type Phase = "starting" | "ready" | "listening" | "capturing" | "transcribing" | "thinking" | "speaking" | "error";
 
 export interface CozyState {
   phase: Phase;
   models: Record<ModelName, ModelState>;
   events: EngineEvent[];
   audioLevel: number;
+  audioHistory: number[];
+  voiceEnabled: boolean;
+  micMuted: boolean | null;
   transcript: string;
   response: string;
   fatalError: string;
@@ -18,6 +21,9 @@ export const initialState: CozyState = {
   models: { wake: "pending", stt: "pending", llm: "pending", tts: "pending" },
   events: [],
   audioLevel: 0,
+  audioHistory: [],
+  voiceEnabled: !process.argv.includes("--text"),
+  micMuted: null,
   transcript: "",
   response: "",
   fatalError: "",
@@ -25,7 +31,7 @@ export const initialState: CozyState = {
 
 const loggedKinds = new Set([
   "backend_crash", "error", "heard", "llm", "rejected",
-  "tool_error", "tool_fail", "tool_result", "user_msg", "audio_profile",
+  "tool_error", "tool_fail", "tool_result", "user_msg", "audio_profile", "done",
 ]);
 
 const withEvent = (state: CozyState, event: EngineEvent): CozyState =>
@@ -44,27 +50,37 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
       return { ...state, models: { ...state.models, [model]: modelState } };
     }
     case "ready":
-      return { ...state, phase: "ready", fatalError: "" };
+      return { ...state, phase: "ready", fatalError: "", voiceEnabled: typeof event.voice === "boolean" ? event.voice : state.voiceEnabled };
+    case "audio_status":
+      return { ...state, micMuted: typeof event.muted === "boolean" ? event.muted : null };
     case "wake_score":
-      return { ...state, audioLevel: Math.max(0, Math.min(1, numberField(event, "score"))) };
+      return state; // Wake confidence is not microphone amplitude.
     case "wake":
-      return withEvent({ ...state, phase: "listening", transcript: "", response: "" }, event);
+      return withEvent({ ...state, phase: "listening", audioHistory: [], audioLevel: 0, transcript: "", response: "" }, event);
     case "stt_start":
       return { ...state, phase: "capturing", transcript: "Listening…", response: "" };
-    case "capture_level":
-      return { ...state, audioLevel: Math.max(0, Math.min(1, numberField(event, "level"))) };
+    case "capture_level": {
+      const raw = numberField(event, "level");
+      const level = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
+      return { ...state, audioLevel: level, audioHistory: [...state.audioHistory, level].slice(-41) };
+    }
+    case "stt_infer":
+      return { ...state, phase: "transcribing", audioLevel: 0, transcript: "Transcribing…" };
     case "transcribed":
       return withEvent({ ...state, phase: "thinking", transcript: textField(event, "text") }, event);
+    case "user_msg":
     case "heard":
+      if (event.kind === "heard" && state.events.at(-1)?.kind === "user_msg" &&
+          textField(state.events.at(-1)!, "text") === textField(event, "text")) return state;
       return withEvent({ ...state, phase: "thinking", transcript: textField(event, "text"), response: "" }, event);
     case "llm":
       return withEvent({ ...state, phase: "thinking" }, event);
     case "llm_text":
       return { ...state, phase: "thinking", response: textField(event, "text") };
     case "tts":
-      return { ...state, phase: "speaking" };
+      return { ...state, phase: "speaking", response: textField(event, "text") || state.response };
     case "done":
-      return { ...state, phase: "ready", response: textField(event, "text"), audioLevel: 0 };
+      return withEvent({ ...state, phase: "ready", response: textField(event, "text"), audioLevel: 0 }, event);
     case "rejected":
       return withEvent({ ...state, phase: "ready", audioLevel: 0 }, event);
     case "tool_result":

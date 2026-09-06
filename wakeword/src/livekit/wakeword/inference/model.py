@@ -147,3 +147,13 @@ class WakeWordModel:
             predictions[name] = score
 
         return predictions
+
+    def close(self) -> None:
+        """Release ONNX sessions before Python begins interpreter teardown."""
+        self._classifiers.clear()
+        if getattr(self, "_mel_frontend", None) is not None:
+            self._mel_frontend._onnx_session = None
+        if getattr(self, "_speech_embedding", None) is not None:
+            self._speech_embedding._session = None
+        self._mel_frontend = None
+        self._speech_embedding = None

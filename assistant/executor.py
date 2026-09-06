@@ -2,8 +2,14 @@
 """Cozy system executor - turns LLM tool calls into real actions."""
 from __future__ import annotations
 
+import ast
+import math
+import operator
+import shlex
 import datetime
 import json
+import os
+import signal
 import shutil
 import subprocess
 import urllib.parse
@@ -121,9 +127,30 @@ def app_open(params):
 
 def app_close(params):
     name = str(params.get("name", "")).strip().lower()
+    protected = {"python", "python3", "node", "bash", "sh", "zsh",
+                 "systemd", "pipewire", "wireplumber", "hyprland",
+                 "xwayland", "cozy"}
     for cand in APP_ALIASES.get(name, [name]):
-        ok, out = _run(["pkill", "-f", cand])
-        if ok:
+        executable = Path(cand).name.lower()
+        if not executable or executable in protected:
+            continue
+        ok, out = _run(["pgrep", "-x", executable])
+        if not ok:
+            continue
+        pids = []
+        for value in out.splitlines():
+            try:
+                pid = int(value)
+            except ValueError:
+                continue
+            if pid not in (os.getpid(), os.getppid()):
+                pids.append(pid)
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                continue
+        if pids:
             return True, "closed " + cand
     return False, "no running app matched " + name
 
@@ -253,28 +280,35 @@ def _parse_duration_to_minutes(text):
     return None
 
 
+def _schedule_notification(when, title, message):
+    """Only acknowledge a job after the OS scheduler accepts it."""
+    at_bin = _which_any("at")
+    if not at_bin:
+        return False, "no scheduler available; install and start atd"
+    notify = _which_any("notify-send")
+    if not notify:
+        return False, "notify-send is unavailable; install libnotify"
+    body = shlex.join([notify, "-u", "critical", "--", title, message]) + "\n"
+    ok, output = _run([at_bin, *when], input=body, timeout=5)
+    return ok, output or ("notification scheduled" if ok else "scheduler rejected the job")
+
+
 def timer_set(params):
-    """Set a countdown timer. The system can use ``at`` for one-shot, or we
-    can spawn a sleeper that notifies via notify-send + paplay. For offline
-    reliability we just schedule via ``at`` and let the OS notify."""
-    label = (params.get("label") or "").strip()
+    label = str(params.get("label") or "").strip()
     minutes = params.get("minutes")
     if minutes is None:
-        # try to extract from a free-form text
         minutes = _parse_duration_to_minutes(label)
     try:
-        minutes = max(1, min(180, int(minutes)))
-    except Exception:
+        minutes = int(minutes)
+        if not 1 <= minutes <= 180:
+            return False, "timer duration must be between 1 and 180 minutes"
+    except (TypeError, ValueError):
         return False, "could not understand duration"
-    at_bin = _which_any("at")
-    if at_bin:
-        body = f"notify-send -u critical 'Cozy timer' '{label or 'Timer'} done' || true"
-        _run(["at", "now", "+", str(minutes), "minutes"], input=body, timeout=5)
-        # ``at`` reading from stdin needs a different invocation; we accept it
-        # as best-effort and fall through to the no-at path.
-    # No reliable timer backend: use a background sleep + notify.
-    label_str = f" for {label}" if label else ""
-    return True, f"timer set{label_str}, {minutes} minutes. I'll let you know."
+    ok, output = _schedule_notification(
+        ["now", "+", str(minutes), "minutes"], "Cozy timer", f"{label or 'Timer'} done")
+    if not ok:
+        return False, output
+    return True, f"timer set{f' for {label}' if label else ''}, {minutes} minutes"
 
 
 def _parse_clock_time(text):
@@ -300,9 +334,10 @@ def _parse_clock_time(text):
     m = _re.search(r"\b(\d{1,2})\s*baje\b", t)  # Hindi
     if m:
         h = int(m.group(1)); mi = 0
-        # ``baje`` without am/pm defaults to morning for <8, evening otherwise
-        if "shaam" in t or "raat" in t or "saam" in t and h < 8:
-            pass
+        if any(word in t for word in ("shaam", "raat", "saam")) and 1 <= h < 12:
+            h += 12
+        elif any(word in t for word in ("subah", "subha")) and h == 12:
+            h = 0
         return h, mi
     # bare number, with "at" keyword
     m = _re.search(r"\bat\s+(\d{1,2})\b(?!:)", t)
@@ -328,52 +363,32 @@ def alarm_set(params):
         return False, "could not understand the time"
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         return False, "time out of range"
-    # Schedule via ``at`` with a computed absolute time
-    at_bin = _which_any("at")
-    if at_bin:
-        now = datetime.datetime.now()
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target <= now:
-            target += datetime.timedelta(days=1)
-        fmt = target.strftime("%H:%M %Y-%m-%d")
-        body = f"notify-send -u critical 'Cozy alarm' '{label or 'Alarm'} ringing' || true"
-        try:
-            p = subprocess.run([at_bin, fmt], input=body,
-                                capture_output=True, text=True, timeout=5)
-            if p.returncode == 0:
-                return True, f"alarm set for {hour:02d}:{minute:02d}"
-        except Exception:
-            pass
-    label_str = f" ({label})" if label else ""
-    return True, f"alarm noted for {hour:02d}:{minute:02d}{label_str} (no scheduler available)"
+    now = datetime.datetime.now()
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += datetime.timedelta(days=1)
+    ok, output = _schedule_notification(
+        ["-t", target.strftime("%Y%m%d%H%M")], "Cozy alarm", f"{label or 'Alarm'} ringing")
+    return (True, f"alarm set for {hour:02d}:{minute:02d}") if ok else (False, output)
 
 
 def reminder_set(params):
-    text = (params.get("text") or "").strip()
+    text = str(params.get("text") or "").strip()
+    if not text:
+        return False, "nothing to remind about"
     minutes = params.get("minutes")
     if minutes is None:
         minutes = _parse_duration_to_minutes(text)
     try:
-        minutes = int(minutes) if minutes else 10
-    except Exception:
-        minutes = 10
-    if not text:
-        return False, "nothing to remind about"
-    # Persist the reminder in case the timer doesn't fire
-    store = Path.home() / ".cozy_reminders.txt"
-    store.parent.mkdir(parents=True, exist_ok=True)
-    due = (datetime.datetime.now() + datetime.timedelta(minutes=minutes)).isoformat(timespec="minutes")
-    with store.open("a") as f:
-        f.write(f"{due}\t{text}\n")
-    # schedule the actual nudge via at if possible
-    at_bin = _which_any("at")
-    if at_bin:
-        body = f"notify-send -u critical 'Cozy reminder' '{text}' || true"
-        try:
-            subprocess.run([at_bin, "now", "+", str(minutes), "minutes"],
-                            input=body, capture_output=True, text=True, timeout=5)
-        except Exception:
-            pass
+        minutes = int(minutes)
+        if not 1 <= minutes <= 525600:
+            return False, "reminder duration must be between 1 minute and 1 year"
+    except (TypeError, ValueError):
+        return False, "could not understand duration"
+    ok, output = _schedule_notification(
+        ["now", "+", str(minutes), "minutes"], "Cozy reminder", text)
+    if not ok:
+        return False, output
     return True, f"reminder set for {minutes} minutes from now: {text}"
 
 
@@ -400,9 +415,13 @@ def system_lock(params=None):
 
 
 def system_shutdown(params):
-    if not params.get("confirm"):
-        return False, "shutdown requires explicit user confirmation (confirm: true)"
-    delay = int(params.get("delay_minutes") or 0)
+    # A model-generated parameter is not user authorization. Power actions are
+    # unavailable unless the user explicitly opts in before launching Cozy.
+    if os.environ.get("COZY_ALLOW_POWER_ACTIONS") != "1":
+        return False, "shutdown is disabled; set COZY_ALLOW_POWER_ACTIONS=1 before launch to opt in"
+    if params.get("confirm") is not True:
+        return False, "shutdown requires the boolean confirm=true"
+    delay = max(0, min(24 * 60, int(params.get("delay_minutes") or 0)))
     if delay > 0:
         ok, out = _run(["shutdown", "+" + str(delay)], timeout=5)
         if ok:
@@ -418,7 +437,20 @@ def system_cancel_shutdown(params=None):
 
 
 def system_battery_status(params=None):
-    # Try upower first (works on most Linux laptops)
+    # Prefer /sys/class/power_supply first - upower on desktops/headless
+    # boxes reports a phantom "0% (should be ignored)" stub that lies to users.
+    base = Path("/sys/class/power_supply")
+    if base.exists():
+        for bat in base.iterdir():
+            try:
+                if "BAT" not in bat.name.upper():
+                    continue
+                cap = int((bat / "capacity").read_text().strip())
+                status = (bat / "status").read_text().strip()
+                return True, f"battery at {cap} percent{' (' + status + ')' if status else ''}"
+            except Exception:
+                continue
+    # Fallback: upower (only on real batteries, skip the phantom stub)
     upower = _which_any("upower")
     if upower:
         try:
@@ -432,22 +464,11 @@ def system_battery_status(params=None):
                         pct = line.split(":", 1)[-1].strip()
                     if "state" in line.lower() and not state:
                         state = line.split(":", 1)[-1].strip()
-                if pct:
+                if pct and "should be ignored" not in pct.lower() \
+                        and "should be ignored" not in state.lower():
                     return True, f"battery at {pct}{' (' + state + ')' if state else ''}"
         except Exception:
             pass
-    # Fallback: /sys/class/power_supply
-    base = Path("/sys/class/power_supply")
-    if base.exists():
-        for bat in base.iterdir():
-            try:
-                if "BAT" not in bat.name.upper():
-                    continue
-                cap = int((bat / "capacity").read_text().strip())
-                status = (bat / "status").read_text().strip()
-                return True, f"battery at {cap} percent{' (' + status + ')' if status else ''}"
-            except Exception:
-                continue
     return False, "no battery info available"
 
 
@@ -528,16 +549,40 @@ def calc_compute(params):
     expr = str(params.get("expression", "")).strip()
     if not expr:
         return False, "no expression"
-    # Sanitise: only digits, operators, parens, dot, spaces
-    import re as _re
-    if not _re.fullmatch(r"[\d+\-*/(). %\s]+", expr):
-        return False, "expression has invalid characters"
+    if len(expr) > 256:
+        return False, "expression is too long (maximum 256 characters)"
+    operations = {ast.Add: operator.add, ast.Sub: operator.sub,
+                  ast.Mult: operator.mul, ast.Div: operator.truediv,
+                  ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+                  ast.Pow: operator.pow}
+
+    def bounded(value):
+        if type(value) not in (int, float) or abs(value) > 10 ** 100:
+            raise ValueError("result exceeds calculator limits")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("result must be finite")
+        return value
+
+    def evaluate(node):
+        if isinstance(node, ast.Constant):
+            return bounded(node.value)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = evaluate(node.operand)
+            return bounded(-value if isinstance(node.op, ast.USub) else value)
+        if isinstance(node, ast.BinOp) and type(node.op) in operations:
+            left, right = evaluate(node.left), evaluate(node.right)
+            if isinstance(node.op, ast.Pow) and abs(right) > 100:
+                raise ValueError("exponent exceeds calculator limit (100)")
+            return bounded(operations[type(node.op)](left, right))
+        raise ValueError("only numeric arithmetic is supported")
+
     try:
-        # Python eval is fine since we have already whitelisted
-        result = eval(expr, {"__builtins__": {}}, {})
-    except Exception as exc:
+        tree = ast.parse(expr, mode="eval")
+        if sum(1 for _ in ast.walk(tree)) > 64:
+            raise ValueError("expression is too complex")
+        result = evaluate(tree.body)
+    except (ValueError, TypeError, SyntaxError, ArithmeticError, RecursionError) as exc:
         return False, "could not evaluate: " + str(exc)
-    # Format: drop trailing .0 for integer results
     if isinstance(result, float) and result.is_integer():
         result = int(result)
     return True, f"{expr} = {result}"
@@ -636,6 +681,9 @@ HANDLERS = {
     "app.switch": app_switch,
 }
 
+
+from system_tools import HANDLERS as SYSTEM_HANDLERS
+HANDLERS.update(SYSTEM_HANDLERS)
 
 def execute(tool_name, params=None):
     handler = HANDLERS.get(tool_name)

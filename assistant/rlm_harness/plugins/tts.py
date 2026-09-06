@@ -39,21 +39,12 @@ class TTSPlugin(Plugin):
              contextlib.redirect_stderr(io.StringIO()):
             import tts
         self._tts = tts
-        # Warm Kokoro while the startup screen is visible. This avoids the
-        # first reply silently waiting on model download/initialization.
-        # The runtime waits for all models before announcing READY. Loading
-        # Kokoro here prevents a surprise warning and a long stall on the
-        # first response.
-        if os.environ.get("COZY_TTS_WARMUP", "1") == "1":
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                pipeline = self._tts._get_pipeline()
-            if pipeline is None:
-                # Keep startup usable; TTS retries lazily on the first reply.
-                pass
         from ._base import json_emit_safe as _emit
         _emit("warmup", model="tts", state="done")
 
     def _do_free(self):
+        if self._tts is not None:
+            self._tts.shutdown()
         self._tts = None
 
     def speak(self, text):

@@ -48,9 +48,9 @@ class LLMPlugin(Plugin):
                 f"Run assistant/sft_qwen.py first."
             )
         import torch
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
         import contextlib, io
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        from peft import PeftModel
         from ._base import json_emit_safe as _emit
         with contextlib.redirect_stdout(io.StringIO()), \
              contextlib.redirect_stderr(io.StringIO()):
@@ -64,9 +64,10 @@ class LLMPlugin(Plugin):
                     pass
             self._tok = AutoTokenizer.from_pretrained(str(self._model_dir), extra_special_tokens=extra)
             base = AutoModelForCausalLM.from_pretrained(
-                str(self._model_dir), torch_dtype=torch.bfloat16,
+                str(self._model_dir), torch_dtype=torch.bfloat16 if self._device == "cuda" else torch.float32,
                 attn_implementation="sdpa")
             if self._use_dpo:
+                from peft import PeftModel
                 base = PeftModel.from_pretrained(base, str(self._dpo_dir))
                 base = base.merge_and_unload()
         self._model = base.to(self._device).eval()
@@ -105,7 +106,7 @@ class LLMPlugin(Plugin):
         else:
             from transformers import TextIteratorStreamer
             streamer = TextIteratorStreamer(
-                self._tok, skip_prompt=True, skip_special_tokens=False)
+                self._tok, skip_prompt=True, skip_special_tokens=False, timeout=60)
             gen_kwargs = dict(
                 input_ids=ids["input_ids"],
                 attention_mask=ids["attention_mask"],
@@ -116,15 +117,25 @@ class LLMPlugin(Plugin):
                 use_cache=True,
             )
             import threading
-            t = threading.Thread(
-                target=self._model.generate, kwargs=gen_kwargs)
+            errors = []
+            def worker():
+                try:
+                    with self._torch.inference_mode():
+                        self._model.generate(**gen_kwargs)
+                except Exception as exc:
+                    errors.append(exc)
+                    streamer.end()
+            t = threading.Thread(target=worker, daemon=True)
             t.start()
             chunks = []
             for piece in streamer:
                 on_token(piece)
                 chunks.append(piece)
-            t.join()
+            t.join(timeout=60)
+            if errors:
+                raise RuntimeError("LLM generation failed") from errors[0]
             text = "".join(chunks).strip()
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+        text = re.sub(r"<\|(?:im_end|endoftext)\|>", "", text).strip()
         self.touch()
         return text

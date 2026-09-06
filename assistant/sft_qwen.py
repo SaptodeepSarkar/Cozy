@@ -35,6 +35,7 @@ def render(row, tok):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--extra-data", nargs="*", default=[], help="Additional SFT JSONL training files")
     parser.add_argument("--base", default=BASE)
     parser.add_argument("--out", default=str(OUT))
     parser.add_argument("--adapter-out", default=str(HERE / "model" / "cozy-llm-v1-adapter"))
@@ -49,6 +50,8 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=max(1, min(4, os.cpu_count() or 1)))
     parser.add_argument("--resume", action="store_true", help="resume the latest SFT checkpoint")
     parser.add_argument("--no-grad-checkpoint", action="store_true")
+    parser.add_argument("--qlora", action="store_true", help="4-bit quantized base (for 1.7B+ on 6GB)")
+    parser.add_argument("--lora-r", type=int, default=16)
     args = parser.parse_args()
     if not torch.cuda.is_available():
         parser.error("CUDA is required for LLM SFT; run train.sh preflight for details")
@@ -67,30 +70,43 @@ def main() -> None:
     ds = load_dataset(
         "json",
         data_files={
-            "train": str(DATA / "sft_train.jsonl"),
+            "train": [str(DATA / "sft_train.jsonl"), *args.extra_data],
             "validation": str(DATA / "sft_val.jsonl"),
         },
     )
     ds = ds.map(to_text, num_proc=args.workers, desc="Rendering chat templates")
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.base,
+    model_kwargs = dict(
         torch_dtype=dtype,
         attn_implementation="sdpa",
         low_cpu_mem_usage=True,
     )
+    if args.qlora:
+        from transformers import BitsAndBytesConfig
+        bnb = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=dtype,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+        model_kwargs["quantization_config"] = bnb
+    model = AutoModelForCausalLM.from_pretrained(args.base, **model_kwargs)
     lora = LoraConfig(
-        r=16,
-        lora_alpha=32,
+        r=args.lora_r,
+        lora_alpha=args.lora_r * 2,
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                         "gate_proj", "up_proj", "down_proj"],
     )
+    if args.qlora:
+        from peft import prepare_model_for_kbit_training
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=not args.no_grad_checkpoint)
     model = get_peft_model(model, lora)
     model.config.use_cache = False
-    model = model.to("cuda")  # explicit: never fall back to CPU silently
+    if not args.qlora:
+        model = model.to("cuda")  # explicit: never fall back to CPU silently
     model.print_trainable_parameters()
 
     cfg = SFTConfig(
@@ -128,6 +144,7 @@ def main() -> None:
     trainer = SFTTrainer(
         model=model,
         args=cfg,
+        processing_class=tok,
         train_dataset=ds["train"],
         eval_dataset=ds["validation"],
     )
@@ -145,7 +162,18 @@ def main() -> None:
     merged = trainer.model.merge_and_unload()
     output_dir = Path(args.out)
     output_dir.mkdir(parents=True, exist_ok=True)
-    # Use safe_serialization=True (default in transformers >= 4.x) and 
+    if args.qlora and getattr(merged, "is_loaded_in_4bit", False):
+        # QLoRA: skip on-GPU merge (would OOM), save adapter only.
+        # The merge step needs to run on CPU/RAM.
+        print("QLoRA mode: dequantizing merged weights on CPU for export...")
+        # Move the merged (still-4bit) model to CPU first, then dequantize
+        merged = merged.to("cpu")
+        # Use BitsAndBytes' dequantize helper via the model itself
+        for name, module in merged.named_modules():
+            if hasattr(module, "dequantize"):
+                module.dequantize()
+        merged = merged.to(dtype)
+    # Use safe_serialization=True (default in transformers >= 4.x) and
     # max_shard_size=2GB so the file definitely lands in cozy-llm-v1/.
     # Also explicitly print files to catch the case where save_pretrained
     # silently writes elsewhere.

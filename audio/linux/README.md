@@ -1,8 +1,8 @@
 # Cozy Linux audio routing
 
-`cozy-audio-route` keeps the default sink/source aligned with a connected
-Bluetooth headset. When no Bluetooth device is present it falls back to the
-RNNoise filter output and the built-in analog sink.
+`cozy-audio-route` keeps playback on a connected Bluetooth headset while
+capture stays on the RNNoise-filtered virtual microphone. This avoids the
+A2DP-to-HFP profile switch that interrupts media playback.
 
 The watcher intentionally polls every five seconds instead of using
 `pactl subscribe`. PipeWire can emit a large burst of graph events while a

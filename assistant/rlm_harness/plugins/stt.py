@@ -47,7 +47,7 @@ class STTPlugin(Plugin):
             # first command. If CT2 cannot load its CUDA runtime, CozySTT
             # will transparently select its configured fallback on demand.
             try:
-                self._stt._get_ct2()
+                self._stt.warmup()
             except Exception:
                 # CUDA 12/13 CTranslate2 mismatch: warm the HF GPU fallback
                 # now so the first spoken command is not delayed by model
@@ -59,6 +59,8 @@ class STTPlugin(Plugin):
         _emit("warmup", model="stt", state="done")
 
     def _do_free(self):
+        if self._stt is not None:
+            self._stt.close()
         self._stt = None
 
     def transcribe(self, audio_or_path):

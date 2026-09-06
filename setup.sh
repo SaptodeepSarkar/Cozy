@@ -58,6 +58,7 @@ uv pip install --python assistant/.venv/bin/python --quiet --upgrade pip
 uv pip install --python assistant/.venv/bin/python --quiet \
     livekit-wakeword pyaudio sounddevice soundfile \
     faster-whisper librosa 'transformers>=4.51,<4.56' torch torchaudio \
+    'nvidia-cublas-cu12>=12.4,<13' \
     'huggingface-hub>=0.34,<1' safetensors tokenizers pyyaml numpy \
     peft trl accelerate kokoro silero-vad
 

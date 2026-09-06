@@ -33,7 +33,7 @@ class WakePlugin(Plugin):
         super().__init__(cfg)
         self._model = None
         self._name = None
-        self._ww = ASSISTANT.parent / "wakeword"
+        self._ww = ASSISTANT.parent / "wakeword" / "src"
         self._ww_dir = ASSISTANT.parent / "wakeword"
         self._use_dpo = False
 
@@ -45,14 +45,17 @@ class WakePlugin(Plugin):
         from ._base import json_emit_safe as _emit
         with contextlib.redirect_stdout(io.StringIO()), \
              contextlib.redirect_stderr(io.StringIO()):
-            from livekit.wakeword import WakeWordModel
+            from wake_engine import create_wake_model
             model_path = self._ww_dir / "output" / "hey_cozy" / "hey_cozy.onnx"
-            self._model = WakeWordModel(models=[model_path])
+            self._model = create_wake_model(model_path)
         self._name = next(iter(self._model._classifiers.keys()))
         _emit("warmup", model="wake", state="done")
 
     def _do_free(self):
+        if self._model is not None:
+            del self._model
         self._model = None
+        self._name = None
 
     def score_window(self, audio_2s):
         assert self._loaded, "call .load() first"

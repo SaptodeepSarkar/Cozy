@@ -241,6 +241,10 @@ def main() -> None:
     samples.clear()
 
     # volume / brightness / media / apps / settings / browser
+    from system_tools import CATALOG
+    for name, _, _, examples in CATALOG:
+        for prompt in examples:
+            add(prompt, tool_call(name, {}))
     emit_tool(VOLUME_CMDS, "system.volume.set")
     emit_tool(HING_VOLUME, "system.volume.set")
     emit_tool(["mute", "mute the sound", "sound band karo",

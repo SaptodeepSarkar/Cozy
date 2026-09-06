@@ -70,6 +70,10 @@ class RuleBackend(Backend):
         if not user_text:
             return {"text": "", "tool": None}
 
+        from system_tools import CATALOG
+        for name, _, _, examples in CATALOG:
+            if user_text.casefold().rstrip("?.") in {x.casefold().rstrip("?.") for x in examples}:
+                return {"text": "", "tool": {"name": name, "parameters": {}}}
         res = self._route(user_text)
         tool_name = res.get("tool")
         args = res.get("args", {})
@@ -89,11 +93,7 @@ class RuleBackend(Backend):
             if m_name is None:
                 reply = "Listening..."
                 return {"text": reply, "tool": None}
-            # actually execute and feed the result back as text
-            result = self._exec(m_name, m_args or {})
-            out = ("Done. " if result.get("ok") else "Failed: ") +                   str(result.get("output", ""))
-            return {"text": out, "tool": {"name": m_name, "parameters": m_args or {}},
-                    "executed": result}
+            return {"text": "", "tool": {"name": m_name, "parameters": m_args or {}}}
         return {"text": "How can I help?", "tool": None}
 
 

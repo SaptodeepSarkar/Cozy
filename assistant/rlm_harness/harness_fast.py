@@ -449,49 +449,97 @@ def extract_tool_call(text: str) -> tuple[str, dict]:
     else falls back to a Python regex. Returns ``(name, args)``;
     both empty on failure.
     """
-    # Try the C path first
+# Try the C path first
     try:
         from .fasttool import extract_tool_call as c_extract
-        return c_extract(text)
+        name, args = c_extract(text)
+        if name:
+            return name, args
     except Exception:
         pass
-    # Python fallback
-    m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.S)
+    # Python fallback: Qwen3 emits <tool_call>...</tool_call> blocks.
+    # Also strip any <think>...</think> block first so we don't pick up
+    # a stray JSON object from the model's reasoning. Also strip Qwen
+    # chat-template end tokens (the model often stops before emitting
+    # the closing brace of the outer JSON).
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+    cleaned = re.sub(r"<\|.*?\|>", "", cleaned, flags=re.S).strip()
+    m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", cleaned, re.S)
     if m:
         try:
             c = json.loads(m.group(1))
             name = c.get("name")
-            params = c.get("parameters") or c.get("arguments") or {}
+            params = c.get("parameters") or c.get("arguments") or c.get("params") or {}
             if isinstance(params, str):
                 try: params = json.loads(params)
                 except: params = {}
             if isinstance(params, dict) and isinstance(name, str):
-                return name, params
+                return name, _extract_numeric_params(params)
         except json.JSONDecodeError:
             pass
-    # Balanced-brace fallback
+    # Balanced-brace fallback (model drops the tags but still emits JSON
+    # with a "name" field). Also handles the common case where the model
+    # stops before emitting the outer closing brace (e.g. the empty-args
+    # case: "arguments": {}<|im_end|>).
     depth = 0
     start = None
-    for i, ch in enumerate(text):
+    for i, ch in enumerate(cleaned):
         if ch == "{":
             if depth == 0: start = i
             depth += 1
         elif ch == "}":
             depth -= 1
             if depth == 0 and start is not None:
-                try:
-                    c = json.loads(text[start:i+1])
-                    if isinstance(c, dict) and isinstance(c.get("name"), str):
-                        params = c.get("parameters") or c.get("arguments") or {}
-                        if isinstance(params, str):
-                            try: params = json.loads(params)
-                            except: params = {}
-                        if isinstance(params, dict):
-                            return c["name"], params
-                except json.JSONDecodeError:
-                    pass
+                chunk = cleaned[start:i + 1]
+                name, args = _try_parse_tool_call(chunk)
+                if name:
+                    return name, args
                 start = None
+    # Unbalanced fallback: model ended with depth > 0 (missing closing brace)
+    if start is not None and depth > 0:
+        chunk = cleaned[start:]
+        # pad with closing braces
+        chunk = chunk + "}" * depth
+        name, args = _try_parse_tool_call(chunk)
+        if name:
+            return name, args
     return "", {}
+
+
+def _try_parse_tool_call(chunk: str) -> tuple[str, dict]:
+    """Try to parse a chunk as a tool call JSON. Returns (name, args) or ('', {})."""
+    import json as _json
+    for candidate in (chunk, chunk.rstrip().rstrip(",")):
+        try:
+            c = _json.loads(candidate)
+        except _json.JSONDecodeError:
+            continue
+        if isinstance(c, dict) and isinstance(c.get("name"), str):
+            params = c.get("parameters") or c.get("arguments") or c.get("params") or {}
+            if isinstance(params, str):
+                try: params = _json.loads(params)
+                except: params = {}
+            if isinstance(params, dict):
+                return c["name"], _extract_numeric_params(params)
+    return "", {}
+
+
+def _extract_numeric_params(params: dict) -> dict:
+    """Try to extract numeric values from string parameters.
+    E.g., {'level': 'int 0-100'} → {'level': 50}, {'level': '50'} → {'level': 50}
+    """
+    import re as _re
+    result = {}
+    for k, v in params.items():
+        if isinstance(v, str):
+            m = _re.search(r'(\d+)', v)
+            if m:
+                result[k] = int(m.group(1))
+            else:
+                result[k] = v
+        else:
+            result[k] = v
+    return result
 
 
 # ---------------------------------------------------------------- main
@@ -542,46 +590,122 @@ class FastHarness:
         return self.plugins.get(name)
 
     def decide(self, user_text: str) -> tuple[str, dict]:
-        """Append the user's turn, run the LLM, return (tool_name, args).
-        ``tool_name`` is empty if the model replied with text only.
-        """
-        # 1. Record the user turn
-        self.trace.append(Turn(role="user", content=user_text,
-                                producer="user"))
-        # 2. Sync from disk (other agents may have written to trace)
-        self.trace._sync_from_disk()
-        # 3. Build prompt
-        msgs, n_tok = self.trace.build_prompt(self.system, self.tools.repr)
-        # 4. Load + run LLM
-        llm = self.plugins.get("llm")
-        if llm is None:
-            return "", {}
-        llm.load()
-        llm.touch()
-        raw = llm.generate(msgs)
-        # 5. Extract tool call
-        name, args = extract_tool_call(raw)
-        if name:
-            self.trace.append(Turn(
-                role="assistant", content="",
-                tool_calls=[{"type": "function",
-                             "function": {"name": name,
-                                          "arguments": json.dumps(args, ensure_ascii=False)}}],
-                producer="model"))
-        else:
-            # Strip any thinking block
-            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.S).strip()
-            self.trace.append(Turn(role="assistant", content=raw, producer="model"))
-        # 6. Maybe unload idle plugins
-        for p in self.plugins.values():
-            p.maybe_idle_unload()
-        # 7. Log
+            """Append the user's turn, run the LLM, return (tool_name, args).
+            ``tool_name`` is empty if the model replied with text only.
+            """
+            # 1. Record the user turn
+            self.trace.append(Turn(role="user", content=user_text,
+                                    producer="user"))
+            # 2. Sync from disk (other agents may have written to trace)
+            self.trace._sync_from_disk()
+            # 3. Build prompt
+            msgs, n_tok = self.trace.build_prompt(self.system, self.tools.repr)
+            # 4. Load + run LLM
+            llm = self.plugins.get("llm")
+            if llm is None:
+                return "", {}
+            llm.load()
+            llm.touch()
+            raw = llm.generate(msgs, max_new_tokens=512)
+            # A sentinel is not a conversational answer. Retry once without
+            # stale trace context; never execute the sentinel as a tool.
+            if raw.strip().lower() in {"", "none", "null"}:
+                raw = llm.generate([
+                    {"role": "system", "content": self.system},
+                    {"role": "user", "content": user_text}], max_new_tokens=256)
+            if raw.strip().lower() in {"", "none", "null"}:
+                raw = "I couldn't understand that request. Please try rephrasing it."
+            # 5. Extract tool call
+            name, args = extract_tool_call(raw)
+            if not name:
+                # Some SFT replies consist only of an exact tool name.
+                # Accept this only for tools with no parameters to invent.
+                from executor import HANDLERS
+                schema = json.loads((ASSISTANT.parent / "team" / "tool_schema.json").read_text())["tools"]
+                parameterless = {tool["name"] for tool in schema if not tool.get("params")}
+                if raw.strip() in parameterless and raw.strip() in HANDLERS:
+                    name, args = raw.strip(), {}
+            if name:
+                name = self._normalize_tool_name(name)
+            if name:
+                self.trace.append(Turn(
+                    role="assistant", content="",
+                    tool_calls=[{"type": "function",
+                                 "function": {"name": name,
+                                              "arguments": json.dumps(args, ensure_ascii=False)}}],
+                    producer="model"))
+            else:
+                # Strip any thinking block
+                raw = re.sub(r"</think>.*?</think>", "", raw, flags=re.S).strip()
+                self.trace.append(Turn(role="assistant", content=raw, producer="model"))
+            # 6. Maybe unload idle plugins
+            for p in self.plugins.values():
+                p.maybe_idle_unload()
+            # 7. Log
+            try:
+                from cozy_log import log_event
+                log_event("decide", user=user_text[:200], tool=name, args=json.dumps(args, ensure_ascii=False)[:200])
+            except Exception:
+                pass
+            return name, args
+
+    def _normalize_tool_name(self, name: str) -> str:
+        """Normalize hallucinated tool names to valid ones."""
         try:
-            from cozy_log import log_event
-            log_event("decide", user=user_text[:200], tool=name, args=json.dumps(args, ensure_ascii=False)[:200])
+            schema = json.loads(
+                (ASSISTANT.parent / "team" / "tool_schema.json").read_text())["tools"]
         except Exception:
-            pass
-        return name, args
+            return name
+        valid_tools = {t["name"] for t in schema}
+        if name in valid_tools:
+            return name
+        # Dash-to-underscore
+        candidate = name.replace("-", "_")
+        if candidate in valid_tools:
+            return candidate
+        # Try stripping hallucinated prefixes
+        for prefix in ("system.", "app.", "browser.", "media."):
+            if name.startswith(prefix):
+                candidate = name[len(prefix):]
+                if candidate in valid_tools:
+                    return candidate
+                for prefix2 in ("system.", "app.", "browser.", "media."):
+                    if candidate.startswith(prefix2):
+                        candidate2 = candidate[len(prefix2):]
+                        if candidate2 in valid_tools:
+                            return candidate2
+        # Try matching the last segment
+        if "." in name:
+            leaf = name.rsplit(".", 1)[-1]
+            for vt in valid_tools:
+                if vt.endswith("." + leaf):
+                    return vt
+        # Last resort: case-insensitive match
+        lname = name.lower()
+        for v in valid_tools:
+            if v.lower() == lname:
+                return v
+        # Fuzzy: extract base action from leaf and match
+        if "." in name:
+            parts = name.rsplit(".", 1)
+            prefix, leaf = parts[0].lower(), parts[1].lower()
+            base = leaf.split("_")[0] if "_" in leaf else leaf
+            for vt in valid_tools:
+                vt_parts = vt.rsplit(".", 1)
+                vt_prefix, vt_leaf = vt_parts[0].lower(), vt_parts[1].lower()
+                if vt_prefix == prefix and vt_leaf.startswith(base):
+                    return vt
+            for vt in valid_tools:
+                vt_parts = vt.rsplit(".", 1)
+                vt_prefix, vt_leaf = vt_parts[0].lower(), vt_parts[1].lower()
+                if vt_leaf == base:
+                    return vt
+            for vt in valid_tools:
+                vt_leaf = vt.rsplit(".", 1)[-1].lower()
+                if vt_leaf.startswith(base) or base.startswith(vt_leaf):
+                    return vt
+        return name
+
     def warmup(self, on_progress=None) -> None:
         """Pre-load all enabled plugins in PARALLEL background threads.
 

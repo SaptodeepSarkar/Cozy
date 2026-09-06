@@ -1,0 +1,19 @@
+{
+  "train_runtime": 4906.5683,
+  "train_samples_per_second": 1.954,
+  "train_steps_per_second": 0.122,
+  "total_flos": 1.255814258688e+16,
+  "train_loss": 0.10241524007171393,
+  "epoch": 3.0,
+  "eval_loss": 0.03591123968362808,
+  "eval_runtime": 37.3894,
+  "eval_samples_per_second": 9.495,
+  "eval_steps_per_second": 4.761,
+  "eval_entropy": 0.038684608242108245,
+  "eval_num_tokens": 2804730.0,
+  "eval_mean_token_accuracy": 0.9877000886402773,
+  "wall_time_s": 4946.33,
+  "peak_gpu_memory_mb": 2554.5,
+  "effective_batch_size": 16,
+  "dtype": "bfloat16"
+}

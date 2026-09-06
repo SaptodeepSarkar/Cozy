@@ -47,12 +47,16 @@ HELP_TEXT = (
 def parse_tool_call(line):
     """Parse ``tool NAME k=v k=v ...`` into a tool-call dict."""
     line = line.strip()
-    if not line.startswith("tool"):
+    if not line.startswith("tool "):
         return None
     body = line[4:].strip()
     if not body:
         return None
-    parts = body.split()
+    import shlex
+    try:
+        parts = shlex.split(body)
+    except ValueError:
+        return None
     name = parts[0]
     args = {}
     for tok in parts[1:]:

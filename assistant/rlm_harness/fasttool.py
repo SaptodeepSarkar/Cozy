@@ -61,11 +61,11 @@ def extract_tool_call(text: str) -> tuple[str, dict]:
         try:
             args = json.loads(args_raw)
         except json.JSONDecodeError:
-            args = {}
+            return "", {}
     else:
         args = {}
     if not isinstance(args, dict):
-        args = {}
+        return "", {}
     return name, args
 
 

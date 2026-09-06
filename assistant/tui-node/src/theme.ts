@@ -1,27 +1,12 @@
 export const theme = {
-  accent: "#89b4fa",
-  border: "#45475a",
-  danger: "#f38ba8",
-  dim: "#6c7086",
-  muted: "#9399b2",
-  primary: "#cdd6f4",
-  success: "#a6e3a1",
-  warning: "#f9e2af",
+  accent: "#A8D5C2",
+  border: "#46514F",
+  danger: "#F0A4A4",
+  dim: "#88928E",
+  muted: "#ACB4AF",
+  primary: "#E9E9E1",
+  success: "#A8D5C2",
+  warning: "#E4C494",
 } as const;
-
-export const CAT_FRAMES = [
-  String.raw` /\_/\\
-( o.o )
- > ^ <`,
-  String.raw` /\_/\\
-( -.- )
- > ^ <`,
-  String.raw` /\_/\\  ᶻ
-( o.o )
- > ^ <`,
-  String.raw` /\_/\\  !
-( O.o )
- > ^ <`,
-] as const;
 
 export const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
