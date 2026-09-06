@@ -1,0 +1,10 @@
+assistant/model/cozy-llm-v1/model.safetensors filter=lfs diff=lfs merge=lfs -text
+stt-finetune/output/cozy_stt_v1_ct2_int8/model.bin filter=lfs diff=lfs merge=lfs -text
+assistant/model/cozy-llm-v1-adapter/adapter_model.safetensors filter=lfs diff=lfs merge=lfs -text
+models/cozy_stt-v1.1/ct2/model.bin filter=lfs diff=lfs merge=lfs -text
+models/cozy_stt-v1.1/ct2/config.json filter=lfs diff=lfs merge=lfs -text
+models/cozy_stt-v1.1/ct2/vocabulary.json filter=lfs diff=lfs merge=lfs -text
+models/cozy-llm-v1.0/base/model.safetensors filter=lfs diff=lfs merge=lfs -text
+models/cozy-llm-v1.1/adapter/adapter_model.safetensors filter=lfs diff=lfs merge=lfs -text
+models/cozy-llm-v1.1/base/model.safetensors filter=lfs diff=lfs merge=lfs -text
+models/cozy_stt-v1.1/hf/pytorch_model.bin filter=lfs diff=lfs merge=lfs -text
