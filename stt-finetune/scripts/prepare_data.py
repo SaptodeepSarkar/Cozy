@@ -14,15 +14,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import DATA_DIR, MANIFEST_DIR, RECORDINGS_DIR  # noqa: E402
 
 random.seed(42)
-POOLS = ["cv_indian", "santhosh_indian"]
+POOLS = ["cv_indian", "santhosh_indian", "flux_tts"]
 EVAL_TAKE = {"cv_indian": 120, "santhosh_indian": 20}
+
+
+def clean_text(text: str) -> str:
+    """Strip Santhosh-style 'file\\tid\\text' prefixes; keep the spoken part."""
+    if "\t" in text:
+        text = text.split("\t")[-1]
+    return text.strip()
 
 
 def load_pool(name):
     man = DATA_DIR / name / "manifest.jsonl"
     if not man.exists():
-        return []
+        return [], []
     rows = [json.loads(l) for l in open(man) if l.strip()]
+    for r in rows:
+        if isinstance(r.get("text"), str):
+            r["text"] = clean_text(r["text"])
+    if name == "flux_tts":
+        # manifest carries its own lexical split: whole sentences held out
+        # (idx % 5 == 0) so eval tests unseen sentences, not just new voices
+        tr = [r for r in rows if r.get("split") != "eval"]
+        ev = [r for r in rows if r.get("split") == "eval"]
+        random.shuffle(tr)
+        random.shuffle(ev)
+        return tr, ev
     random.shuffle(rows)
     n_eval = min(EVAL_TAKE.get(name, 50), max(1, len(rows) // 10))
     return rows[n_eval:], rows[:n_eval]   # train_part, eval_part

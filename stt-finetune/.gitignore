@@ -5,6 +5,8 @@ data/cv_indian/
 data/nptel_indian/
 data/fleurs_raw/
 data/manifests/
+data/flux_tts/wav/
+data/flux_tts/mp3/
 checkpoints/
 output/
 __pycache__/

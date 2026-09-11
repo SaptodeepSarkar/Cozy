@@ -1,0 +1,69 @@
+{
+  "v1.0": {
+    "model": "v1.0 (openai/whisper-small base)",
+    "wer": 14.174589455488332,
+    "rtf": 0.018384858154118635,
+    "audio_secs": 1164.3,
+    "n_clips": 217,
+    "engine": "transformers fp16",
+    "by_source": {
+      "cv_indian": {
+        "wer": 8.195211786372008,
+        "n": 120
+      },
+      "flux_tts": {
+        "wer": 19.41580756013746,
+        "n": 92
+      },
+      "santhosh_indian": {
+        "wer": 20.3125,
+        "n": 5
+      }
+    }
+  },
+  "v1.1": {
+    "model": "v1.1 (Cozy LoRA, Hinglish-aware)",
+    "wer": 16.637856525496975,
+    "rtf": 0.013340367437629988,
+    "audio_secs": 1164.3,
+    "n_clips": 217,
+    "engine": "transformers fp16",
+    "by_source": {
+      "cv_indian": {
+        "wer": 7.642725598526703,
+        "n": 120
+      },
+      "flux_tts": {
+        "wer": 24.22680412371134,
+        "n": 92
+      },
+      "santhosh_indian": {
+        "wer": 31.25,
+        "n": 5
+      }
+    }
+  },
+  "v1.2": {
+    "model": "v1.2 (Cozy LoRA + 368 Flux-TTs hard-case clips)",
+    "wer": 11.927398444252377,
+    "rtf": 0.012926987474788054,
+    "audio_secs": 1164.3,
+    "n_clips": 217,
+    "engine": "transformers fp16",
+    "by_source": {
+      "cv_indian": {
+        "wer": 5.985267034990792,
+        "n": 120
+      },
+      "flux_tts": {
+        "wer": 16.752577319587626,
+        "n": 92
+      },
+      "santhosh_indian": {
+        "wer": 25.0,
+        "n": 5
+      }
+    }
+  },
+  "eval": "217 clips (120 cv_indian + 5 santhosh_indian + 92 flux_tts lexical holdout), transformers fp16"
+}

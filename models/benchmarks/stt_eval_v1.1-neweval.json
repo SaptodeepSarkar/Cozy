@@ -1,0 +1,22 @@
+{
+  "model": "v1.1-neweval",
+  "wer": 16.637856525496975,
+  "rtf": 0.013340367437629988,
+  "audio_secs": 1164.3,
+  "n_clips": 217,
+  "engine": "transformers fp16",
+  "by_source": {
+    "cv_indian": {
+      "wer": 7.642725598526703,
+      "n": 120
+    },
+    "flux_tts": {
+      "wer": 24.22680412371134,
+      "n": 92
+    },
+    "santhosh_indian": {
+      "wer": 31.25,
+      "n": 5
+    }
+  }
+}

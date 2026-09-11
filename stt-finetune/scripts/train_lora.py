@@ -19,7 +19,13 @@ from common import (BASE_MODEL, CHECKPOINT_DIR, MANIFEST_DIR,
 
 
 def build_datasets(max_audio_s=30.0):
-    """Returns (train_ds, eval_ds, processor); every manifest row has audio_path."""
+    """Returns (train_ds, eval_ds, processor); every manifest row has audio_path.
+
+    Uses from_generator (streaming Arrow write) instead of from_dict so the
+    full mel cache never sits in RAM twice — the 6 GB dGPU box often has a
+    full swap and the OOM killer struck at ~1750 clips with from_dict.
+    """
+    import gc
     import datasets as hfds
     import librosa
     import numpy as np
@@ -29,10 +35,9 @@ def build_datasets(max_audio_s=30.0):
     processor = WhisperProcessor.from_pretrained(BASE_MODEL, language="english",
                                                  task="transcribe")
 
-    def featurize(rows):
-        out = {"input_features": [], "labels": [], "source": []}
-        skipped = 0
-        for index, r in enumerate(rows, 1):
+    def gen_rows(name):
+        n_ok, n_skip = 0, 0
+        for r in read_manifest(MANIFEST_DIR / name):
             try:
                 audio, sr = sf.read(r["audio_path"], dtype="float32", always_2d=False)
                 if getattr(audio, "ndim", 1) > 1:
@@ -40,26 +45,32 @@ def build_datasets(max_audio_s=30.0):
                 if sr != 16000:
                     audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
                 if len(audio) > max_audio_s * 16000 or len(audio) < 1600:
-                    skipped += 1
+                    n_skip += 1
                     continue
                 f = processor(audio, sampling_rate=16000).input_features[0]
                 lab = processor.tokenizer(r["text"], truncation=True, max_length=224).input_ids
-                out["input_features"].append(np.asarray(f, dtype=np.float32))
-                out["labels"].append(lab)
-                out["source"].append(r["source"])
+                n_ok += 1
+                if (n_ok + n_skip) % 500 == 0:
+                    print(f"[data] {name}: {n_ok + n_skip} clips", flush=True)
+                yield {"input_features": np.asarray(f, dtype=np.float32),
+                       "labels": lab, "source": r["source"]}
             except (OSError, RuntimeError, ValueError) as exc:
-                skipped += 1
+                n_skip += 1
                 print(f"[data] skipped {r.get('audio_path')}: {exc}", flush=True)
-            if index % 250 == 0:
-                print(f"[data] {index}/{len(rows)} clips", flush=True)
-        if skipped:
-            print(f"[data] skipped {skipped}/{len(rows)} invalid/short clips", flush=True)
-        return out
+        print(f"[data] {name}: {n_ok} ok, {n_skip} skipped", flush=True)
 
     def gen(name):
-        rows = list(read_manifest(MANIFEST_DIR / name))
-        d = featurize(rows)
-        return hfds.Dataset.from_dict(d)
+        ds = hfds.Dataset.from_generator(
+            lambda n=name: gen_rows(n),
+            features=hfds.Features({
+                # variable-length mel (80 x T); collator pads per batch
+                "input_features": hfds.Sequence(hfds.Sequence(hfds.Value("float32"))),
+                "labels": hfds.Sequence(hfds.Value("int32")),
+                "source": hfds.Value("string"),
+            }),
+        )
+        gc.collect()
+        return ds
 
     train = gen("train.jsonl")
     evald = gen("eval.jsonl")
@@ -71,6 +82,7 @@ class SpeechCollator:
     """Official Whisper seq2seq collator (pads mel features; masks label pads)."""
     processor: Any
     padding: Union[bool, str] = True
+    dtype: Any = None  # torch dtype matching the model (bf16/fp16); avoids conv dtype mismatch
 
     def __call__(self, features: List[Dict[str, Union[List[int], Any]]]):
         input_features = [{"input_features": f["input_features"]} for f in features]
@@ -81,6 +93,9 @@ class SpeechCollator:
         if (labels[:, 0] == self.processor.tokenizer.bos_token_id).all().cpu().item():
             labels = labels[:, 1:]
         batch["labels"] = labels
+        if self.dtype is not None:
+            import torch
+            batch["input_features"] = batch["input_features"].to(self.dtype)
         return batch
 
 
@@ -159,7 +174,7 @@ def main():
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
         lr_scheduler_type="linear",
-        warmup_ratio=0.05,
+        warmup_steps=8,  # ~5% of ~168 full-run steps (transformers v5 dropped warmup_ratio)
         bf16=dtype == torch.bfloat16,
         fp16=dtype == torch.float16,
         tf32=True,
@@ -213,7 +228,7 @@ def main():
         args=targs,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        data_collator=SpeechCollator(processor),
+        data_collator=SpeechCollator(processor, dtype=dtype),
         processing_class=processor,
         compute_metrics=compute_metrics,
     )
