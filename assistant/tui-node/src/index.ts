@@ -15,7 +15,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEngineEvent, textField, type EngineEvent, type ModelName } from "./protocol.ts";
-import { initialState, reduceEvent, type CozyState } from "./state.ts";
+import { barsForLevels, formatElapsed, initialState, reduceEvent, type CozyState } from "./state.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..", "..", "..");
@@ -118,6 +118,7 @@ const ink = RGBA.fromHex(colors.ink);
 const muted = RGBA.fromHex(colors.muted);
 const green = RGBA.fromHex(colors.green);
 const blue = RGBA.fromHex(colors.blue);
+const peach = RGBA.fromHex(colors.peach);
 const red = RGBA.fromHex(colors.red);
 
 function chunk(text: string, fg: RGBA = muted): TextChunk {
@@ -184,6 +185,18 @@ col.add(header);
 const pillsLine = new TextRenderable(renderer, { content: "", fg: colors.muted, width: "100%", height: 1 });
 col.add(pillsLine);
 col.add(new TextRenderable(renderer, { content: SEP, fg: colors.track, height: 1 }));
+
+// Live listening visualizer (the Stitch listening screen, for real):
+// status line + flat mic-level waveform, visible only while the engine is
+// capturing or transcribing speech.
+const vizBox = new BoxRenderable(renderer, {
+  visible: false, width: "100%", flexDirection: "column", gap: 0,
+});
+const vizStatus = new TextRenderable(renderer, { content: "", fg: colors.blue, width: "100%", height: 1 });
+const vizBars = new TextRenderable(renderer, { content: "", fg: colors.blue, width: "100%", height: 1 });
+vizBox.add(vizStatus);
+vizBox.add(vizBars);
+col.add(vizBox);
 
 const conversation = new ScrollBoxRenderable(renderer, {
   flexGrow: 1, width: "100%", scrollY: true, stickyScroll: true, stickyStart: "bottom",
@@ -258,6 +271,21 @@ function updateUi() {
       : colors.muted;
     phaseText.content = `● ${state.phase}`;
     phaseText.fg = phaseColor;
+    const live = state.phase === "listening" || state.phase === "capturing" || state.phase === "transcribing";
+    vizBox.visible = live;
+    if (live) {
+      const transcribing = state.phase === "transcribing";
+      const heard = state.transcript && state.transcript !== "Listening…" && state.transcript !== "Transcribing…"
+        ? ` • > ${state.transcript}`
+        : "";
+      vizStatus.content = transcribing
+        ? `◉ transcribing…${heard}`
+        : `● LISTENING ${formatElapsed(state.listeningStartedAt || now, now)}${heard}`;
+      const vizColor = transcribing ? colors.peach : colors.blue;
+      vizStatus.fg = vizColor;
+      vizBars.content = barsForLevels(state.audioHistory);
+      vizBars.fg = vizColor;
+    }
     conversationText.content = eventLines(state.events);
     input.focus();
   }

@@ -16,6 +16,7 @@ export interface CozyState {
   fatalError: string;
   loadingModel: ModelName | "";
   loadingStartedAt: number;
+  listeningStartedAt: number;
   modelElapsed: Partial<Record<ModelName, number>>;
   startupProgress: number;
   hasStarted: boolean;
@@ -34,6 +35,7 @@ export const initialState: CozyState = {
   fatalError: "",
   loadingModel: "",
   loadingStartedAt: 0,
+  listeningStartedAt: 0,
   modelElapsed: {},
   startupProgress: 0,
   hasStarted: false,
@@ -71,13 +73,13 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
       };
     }
     case "ready":
-      return { ...state, phase: "ready", fatalError: "", hasStarted: true, voiceEnabled: typeof event.voice === "boolean" ? event.voice : state.voiceEnabled };
+      return { ...state, phase: "ready", fatalError: "", hasStarted: true, listeningStartedAt: 0, voiceEnabled: typeof event.voice === "boolean" ? event.voice : state.voiceEnabled };
     case "audio_status":
       return { ...state, micMuted: typeof event.muted === "boolean" ? event.muted : null };
     case "wake_score":
       return state; // Wake confidence is not microphone amplitude.
     case "wake":
-      return withEvent({ ...state, phase: "listening", audioHistory: [], audioLevel: 0, transcript: "" }, event);
+      return withEvent({ ...state, phase: "listening", audioHistory: [], audioLevel: 0, transcript: "", listeningStartedAt: event.ts }, event);
     case "stt_start":
       return { ...state, phase: "capturing", transcript: "Listening…" };
     case "capture_level": {
@@ -127,4 +129,22 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
     default:
       return state;
   }
+}
+
+const BARS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+
+/** Render mic levels (0..1) as a flat terminal waveform, e.g. `▁▃▅█▃▁`. */
+export function barsForLevels(levels: number[], columns = 24): string {
+  const tail = levels.slice(-columns);
+  const pad = "▁".repeat(Math.max(0, columns - tail.length));
+  return pad + tail.map(raw => {
+    const level = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
+    return BARS[Math.min(BARS.length - 1, Math.floor(level * BARS.length))];
+  }).join("");
+}
+
+/** Format an elapsed duration as `MM:SS` for the listening status line. */
+export function formatElapsed(startedAt: number, now: number): string {
+  const secs = Math.max(0, Math.floor(now - startedAt));
+  return `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
 }
