@@ -4,8 +4,10 @@ The voice assistant that sits behind the wake word. Wires together:
 
 **wakeword → STT → LLM → executor**
 
-All models run locally. No cloud calls, no telemetry. Designed for an
-NVIDIA RTX 3050 6GB (any ≥6 GB CUDA GPU works).
+The default stack runs locally on an NVIDIA RTX 3050 6GB (any ≥6 GB CUDA GPU
+works). For temporary capability testing, Cozy can route its action model
+through OpenRouter while wake word, STT, cleanup, TTS, and tool execution stay
+on this machine.
 
 ## Quick start
 
@@ -77,6 +79,17 @@ bash run.sh
 
 Only the adapter is retrained when tools or examples change; the NF4 loader
 keeps the model within the 6 GB GPU budget alongside the audio stack.
+
+### OpenRouter capability testing
+
+When the repo-root `.env` contains `OPENROUTER_API`, Cozy automatically uses
+`inclusionai/ling-3.0-flash-vl:free` for planning and tool selection. The key
+is never printed or committed. The normal tool schema is sent with each
+request, and returned tool calls go through the same Cozy executor and FoxMCP
+browser bridge as the local model.
+
+Set `COZY_OPENROUTER_MODEL` to change the temporary remote model. Remove the
+key or unset it to return to the local LoRA-backed model.
 
 ### Firefox browser tools
 

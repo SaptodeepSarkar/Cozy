@@ -971,6 +971,8 @@ def handle_text(text, tok, llm, speak, fast_harness=None):
 
 
 def main() -> None:
+    from env_loader import load_project_env
+    load_project_env()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-wake", action="store_true",
                         help="skip wake word gate (voice loop still on)")

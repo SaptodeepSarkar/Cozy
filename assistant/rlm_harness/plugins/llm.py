@@ -11,6 +11,8 @@ import os
 import sys
 import json
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from ..harness_fast import Plugin, ASSISTANT
@@ -44,9 +46,18 @@ class LLMPlugin(Plugin):
         self._dpo_dir = ASSISTANT / "model" / "cozy-llm-v1-dpo"
         self._use_dpo = (self._dpo_dir / "adapter_model.safetensors").exists()
         self._use_4bit = os.environ.get("COZY_LLM_4BIT", "0") == "1"
+        self._openrouter_key = os.environ.get("OPENROUTER_API") or os.environ.get("OPENROUTER_API_KEY")
+        self._openrouter_model = os.environ.get(
+            "COZY_OPENROUTER_MODEL", "inclusionai/ling-3.0-flash-vl:free")
         self._tool_schema = None
 
     def _do_load(self):
+        if self._openrouter_key:
+            # Cloud inference keeps the local GPU available for STT/TTS and
+            # makes it possible to test the stronger browser-capable model.
+            self._model = "openrouter"
+            self._tok = None
+            return
         if self._model_dir.exists() and not any(self._model_dir.glob("*.safetensors")):
             raise FileNotFoundError(
                 f"LLM weights missing: {self._model_dir}/model.safetensors. "
@@ -108,6 +119,8 @@ class LLMPlugin(Plugin):
 
     def generate(self, messages, max_new_tokens=200, on_token=None):
         assert self._loaded, "call .load() first"
+        if self._model == "openrouter":
+            return self._generate_openrouter(messages, max_new_tokens)
         import re
         # Tool definitions are static across turns; parse once so generation
         # spends its time on model tokens rather than filesystem/JSON work.
@@ -165,3 +178,68 @@ class LLMPlugin(Plugin):
         text = re.sub(r"<\|(?:im_end|endoftext)\|>", "", text).strip()
         self.touch()
         return text
+
+    @staticmethod
+    def _openrouter_tools(schema):
+        tools = []
+        for item in schema:
+            properties = {}
+            required = []
+            for name, description in (item.get("params") or {}).items():
+                desc = str(description)
+                lower = desc.lower()
+                typ = "array" if "list" in lower else "integer" if "int" in lower else "number" if "float" in lower else "string"
+                prop = {"type": typ, "description": desc}
+                if typ == "array":
+                    prop["items"] = {"type": "string"}
+                properties[name] = prop
+                if "optional" not in lower:
+                    required.append(name)
+            tools.append({"type": "function", "function": {
+                "name": item["name"],
+                "description": item.get("desc", ""),
+                "parameters": {"type": "object", "properties": properties,
+                                "required": required, "additionalProperties": False},
+            }})
+        return tools
+
+    def _generate_openrouter(self, messages, max_new_tokens):
+        """Call OpenRouter's OpenAI-compatible endpoint and normalize tools."""
+        schema = self._tool_schema or json.loads(
+            (ASSISTANT.parent / "team" / "tool_schema.json").read_text())["tools"]
+        payload = {
+            "model": self._openrouter_model,
+            "messages": messages,
+            "tools": self._openrouter_tools(schema),
+            "tool_choice": "auto",
+            "max_tokens": max_new_tokens,
+            "temperature": 0.1,
+        }
+        request = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Authorization": f"Bearer {self._openrouter_key}",
+                     "Content-Type": "application/json",
+                     "HTTP-Referer": "https://github.com/saptodeep/Cozy",
+                     "X-Title": "Cozy personal assistant"},
+            method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            raise RuntimeError(f"OpenRouter request failed: {exc}") from exc
+        try:
+            message = body["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(f"OpenRouter returned no assistant message: {body}") from exc
+        calls = message.get("tool_calls") or []
+        if calls:
+            call = calls[0].get("function", calls[0])
+            args = call.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+            return f"<tool_call>{json.dumps({'name': call.get('name', ''), 'arguments': args})}</tool_call>"
+        return str(message.get("content") or "").strip()

@@ -106,7 +106,7 @@ class HarnessConfig:
     use_stt: bool = True
     use_tts: bool = True
     use_llm: bool = True
-    use_cleanup: bool = False
+    use_cleanup: bool = True
     use_vision: bool = False
     use_foxmcp: bool = True
     use_mcp: bool = True
@@ -601,8 +601,8 @@ class FastHarness:
         self.tools = ToolSchemaCache(self.cfg)
         self.plugins: dict[str, Plugin] = {}
         self.mcp_tools: list[dict] = []
-        self.system = ("You are Cozy, a voice assistant running fully "
-                       "offline on the user laptop. Respond fast and short. "
+        self.system = ("You are Cozy, a voice assistant for the user's "
+                       "laptop. Respond fast and short. "
                        "When the user wants an action, call exactly one "
                        "tool with compact JSON. For plain chat, answer "
                        "briefly and warmly without tools.")
