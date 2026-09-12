@@ -39,8 +39,13 @@ class TTSPlugin(Plugin):
              contextlib.redirect_stderr(io.StringIO()):
             import tts
             if not tts.warmup():
-                detail = tts.initialization_error()
-                raise RuntimeError(detail or "Kokoro could not be initialized")
+                # Kokoro and Torch may race with STT/LLM imports during the
+                # concurrent startup batch. Reset and retry once before
+                # reporting a genuine model failure.
+                tts.shutdown()
+                if not tts.warmup():
+                    detail = tts.initialization_error()
+                    raise RuntimeError(detail or "Kokoro could not be initialized")
         self._tts = tts
         from ._base import json_emit_safe as _emit
         _emit("warmup", model="tts", state="done")

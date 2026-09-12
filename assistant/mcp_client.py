@@ -65,8 +65,9 @@ class MCPHub:
                 if not line:
                     raise RuntimeError(f"MCP server {server.name} closed stdout")
                 body = line
-            if body.lstrip().startswith("data:"):
-                body = next((x[5:].strip() for x in body.splitlines() if x.startswith("data:")), "{}")
+            if "data:" in body:
+                body = next((x[5:].strip() for x in body.splitlines()
+                             if x.startswith("data:")), "{}")
             value = json.loads(body or "{}")
             if "error" in value:
                 raise RuntimeError(value["error"].get("message", value["error"]))

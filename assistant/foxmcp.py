@@ -119,8 +119,11 @@ class FoxMCPClient:
             if sid:
                 self.session_id = sid
             body = response.read().decode("utf-8", "replace")
-        if body.lstrip().startswith("data:"):
-            body = next((line[5:].strip() for line in body.splitlines() if line.startswith("data:")), "{}")
+        # Streamable HTTP replies are SSE and commonly start with
+        # ``event: message`` before the JSON ``data:`` line.
+        if "data:" in body:
+            body = next((line[5:].strip() for line in body.splitlines()
+                         if line.startswith("data:")), "{}")
         value = json.loads(body or "{}")
         if "error" in value:
             raise RuntimeError(value["error"].get("message", value["error"]))
