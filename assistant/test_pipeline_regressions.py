@@ -38,9 +38,9 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(executor.execute(name)['ok'], name)
 
     def test_runtime_uses_room_safe_wake_threshold(self):
-        self.assertAlmostEqual(runtime._default_wake_threshold(), 0.50)
-        with patch.dict("os.environ", {"COZY_WAKE_THRESHOLD": "0.62"}):
-            self.assertAlmostEqual(runtime._default_wake_threshold(), 0.62)
+        self.assertAlmostEqual(runtime._default_wake_threshold(), 0.60)
+        with patch.dict("os.environ", {"COZY_WAKE_THRESHOLD": "0.72"}):
+            self.assertAlmostEqual(runtime._default_wake_threshold(), 0.72)
 
     def test_command_preroll_and_wake_phrase_cleanup(self):
         audio = np.arange(32000, dtype=np.int16)
@@ -48,6 +48,19 @@ class PipelineTests(unittest.TestCase):
             runtime._capture_preroll(audio, 32000, 0.5), audio[-8000:])
         self.assertEqual(runtime._strip_wake_phrase("Hey Cozy, open Firefox"), "open Firefox")
         self.assertEqual(runtime._strip_wake_phrase("okay cosy: what time is it"), "what time is it")
+
+    def test_repeated_wake_phrases_are_all_stripped(self):
+        self.assertEqual(
+            runtime._strip_wake_phrase("hey cozy hey cozy, open Firefox"), "open Firefox")
+        self.assertEqual(runtime._strip_wake_phrase("Hey Cozy"), "")
+        self.assertEqual(runtime._strip_wake_phrase("open Firefox"), "open Firefox")
+
+    def test_reply_echo_never_reaches_tts_empty(self):
+        self.assertEqual(
+            runtime._strip_reply_echo("Hey Cozy, volume set to 40."), "volume set to 40.")
+        self.assertEqual(
+            runtime._strip_reply_echo("Cozy here, all done."), "Cozy here, all done.")
+        self.assertEqual(runtime._strip_reply_echo("Done."), "Done.")
 
     def test_current_stt_prefers_complete_v12_artifacts(self):
         self.assertEqual(stt.CT2_DIR.name, "cozy_stt_v1.2_ct2_int8")

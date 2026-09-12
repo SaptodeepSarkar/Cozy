@@ -90,17 +90,46 @@ def _default_wake_threshold() -> float:
 
     The evaluation set's mathematically optimal threshold is intentionally not
     used here: it contains balanced clips, while a live microphone sees hours
-    of negatives.  Using 0.31 in production caused frequent phantom wakes.
+    of negatives.  0.31 caused frequent phantom wakes, and 0.50 still fired
+    on room noise/TV transients.  Override per room with COZY_WAKE_THRESHOLD
+    (or `cozy --threshold`) after a `cozy --calibrate` run.
     """
-    return float(os.environ.get("COZY_WAKE_THRESHOLD", "0.50"))
+    return float(os.environ.get("COZY_WAKE_THRESHOLD", "0.60"))
+
+
+# A lone window must be exceptionally confident to skip the two-hit rule.
+# Anything lower needs two adjacent 2 s rolling-window scores, which is
+# what rejects single-frame transients (coughs, clicks, TV pops).
+WAKE_SINGLE_HIT_BYPASS = 0.95
 
 
 def _strip_wake_phrase(text: str) -> str:
-    """Remove a wake phrase included by command pre-roll."""
-    return re.sub(
-        r"^\s*(?:(?:hey|hi|okay|ok)\s+)?co[sz]y\b[\s,.:;!\-]*",
-        "", text, count=1, flags=re.IGNORECASE,
+    """Remove wake phrases included by command pre-roll.
+
+    Loops so repeated phrases ("hey cozy hey cozy, ...") are all removed
+    and none leak into the LLM prompt or the spoken reply.
+    """
+    pattern = r"^\s*(?:(?:hey|hi|okay|ok)\s+)?co[sz]y\b[\s,.:;!\-]*"
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(pattern, "", text, count=1, flags=re.IGNORECASE).strip()
+    return text
+
+
+def _strip_reply_echo(reply: str) -> str:
+    """Drop a leading wake-word echo from an LLM reply before display/TTS.
+
+    The model sometimes opens with "Hey Cozy, ..." — speaking that back is
+    pure echo. Only the hey/hi/okay-prefixed form is stripped; a bare
+    "Cozy here ..." is the assistant referring to itself and is kept.
+    Never returns empty: falls back to the original reply.
+    """
+    cleaned = re.sub(
+        r"^\s*(?:hey|hi|okay|ok)\s+co[sz]y\b[\s,.:;!\-]*",
+        "", reply, count=1, flags=re.IGNORECASE,
     ).strip()
+    return cleaned if cleaned else reply
 
 
 def _capture_preroll(audio_buf, audio_buf_fill: int, seconds: float,
@@ -239,6 +268,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                         reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.S).strip()
                         break
                 reply = reply or "I couldn't produce a response."
+                reply = _strip_reply_echo(reply)
                 json_emit("llm_text", text=reply, dt=dt)
                 if tts_enabled and is_available():
                     json_emit("tts", text=reply)
@@ -259,6 +289,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                 else:
                     reply = f"Failed: {output or 'the action did not complete.'}"
                     json_emit("tool_fail", name=name, out=output)
+                reply = _strip_reply_echo(reply)
                 from rlm_harness.harness_fast import Turn
                 harness.trace.append(Turn(role="tool", name=name, content=output, producer="tool"))
                 harness.trace.append(Turn(role="assistant", content=reply, producer="model"))
@@ -352,8 +383,8 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                 wake_hits += 1
                 # A single marginal score is not enough to interrupt the
                 # user. Two adjacent 2 s rolling-window scores are required;
-                # an exceptionally strong score can still trigger at once.
-                if wake_hits < 2 and score < 0.85:
+                # only an exceptionally strong score may trigger at once.
+                if wake_hits < 2 and score < WAKE_SINGLE_HIT_BYPASS:
                     continue
                 wake_hits = 0
                 cooldown_until = _time.time() + 4.0
