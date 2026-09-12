@@ -153,11 +153,22 @@ const progressTrack = new BoxRenderable(renderer, { width: 60, height: 1, backgr
 const progressFill = new BoxRenderable(renderer, { width: "1%", height: 1, backgroundColor: colors.blue });
 progressTrack.add(progressFill);
 loadCol.add(progressTrack);
-const loadPills = new TextRenderable(renderer, { content: "", fg: colors.muted, width: 76, height: 1 });
-loadCol.add(loadPills);
+const loadRows: TextRenderable[] = MODEL_NAMES.map(() => {
+  const el = new TextRenderable(renderer, { content: "", fg: colors.muted, width: 76, height: 1 });
+  loadCol.add(el);
+  return el;
+});
 const startupError = new TextRenderable(renderer, { content: "", fg: colors.red, width: 76, height: 2, wrapMode: "word" });
 loadCol.add(startupError);
-loadCol.add(new TextRenderable(renderer, { content: 'tip: say "hey cozy" • offline • cuda:0', fg: colors.faint, height: 1 }));
+const TIPS = [
+  'tip: say "hey cozy", then speak naturally',
+  "tip: filler words are polished out automatically",
+  "tip: fully offline — no cloud, no telemetry",
+  "tip: tune sensitivity with cozy --threshold 0.6",
+  "tip: press space to talk, esc to cancel",
+];
+const tipsEl = new TextRenderable(renderer, { content: TIPS[0], fg: colors.faint, width: 76, height: 1 });
+loadCol.add(tipsEl);
 loadCol.add(new TextRenderable(renderer, { content: "ctrl+c quit", fg: colors.faint, height: 1 }));
 
 const workspace = new BoxRenderable(renderer, {
@@ -249,14 +260,24 @@ function eventLines(events: EngineEvent[]) {
 
 function updateUi() {
   const now = Date.now() / 1000;
+  const total = Math.max(0, now - bootedAt);
   const failed = state.phase === "error";
   const active = MODEL_NAMES.find(name => state.models[name] === "loading");
   loadingHeadline.content = failed
     ? "startup could not finish"
-    : active ? `warming ${active}… ${Math.max(0, now - state.loadingStartedAt).toFixed(1)}s` : "preparing models…";
-  const pills = new StyledText(pillChunks(now));
-  loadPills.content = pills;
-  pillsLine.content = pills;
+    : active ? `warming ${active}… ${Math.max(0, now - state.loadingStartedAt).toFixed(1)}s · total ${total.toFixed(0)}s` : "preparing models…";
+  for (let i = 0; i < MODEL_NAMES.length; i++) {
+    const name = MODEL_NAMES[i];
+    const status = state.models[name];
+    const elapsed = status === "loading"
+      ? Math.max(0, now - state.loadingStartedAt)
+      : state.modelElapsed[name];
+    const mark = status === "done" ? "●" : status === "failed" ? "×" : status === "loading" ? "◉" : "○";
+    loadRows[i].content = `${mark} ${name.padEnd(8)}${elapsed === undefined ? "" : `${elapsed.toFixed(1)}s`}`;
+    loadRows[i].fg = status === "done" ? colors.green : status === "failed" ? colors.red : status === "loading" ? colors.blue : colors.muted;
+  }
+  tipsEl.content = TIPS[Math.floor(total / 5) % TIPS.length];
+  pillsLine.content = new StyledText(pillChunks(now));
   progressFill.width = `${Math.max(1, Math.round(state.startupProgress * 100))}%`;
   startupError.content = failed ? state.fatalError : "";
 
@@ -333,6 +354,7 @@ supervisor.subscribe(event => {
   state = reduceEvent(state, event);
   updateUi();
 });
+const bootedAt = Date.now() / 1000;
 const clock = setInterval(updateUi, 100);
 updateUi();
 supervisor.start();
