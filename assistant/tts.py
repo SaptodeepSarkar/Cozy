@@ -100,6 +100,10 @@ def _get_pipeline():
         # Suppress noisy HF progress bars
         os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
         try:
+            import spacy
+            if not spacy.util.is_package("en_core_web_sm"):
+                raise RuntimeError(
+                    "Kokoro requires spaCy model en_core_web_sm; run bash setup.sh")
             from kokoro import KPipeline
             cfg = _load_cfg()
             print(f"[tts] loading Kokoro pipeline (voice={cfg['voice']}, lang={cfg['lang']})...", flush=True)

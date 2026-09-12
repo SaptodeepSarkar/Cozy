@@ -23,6 +23,8 @@ dependencies = [
     "librosa>=0.10",
     # Kokoro TTS
     "kokoro>=0.9",
+    "spacy>=3.8,<3.9",
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
     # Kokoro currently imports AlbertModel, which was removed from the
     # Transformers 5.x top-level API. Keep the voice and STT stacks on the
     # compatible 4.x line.

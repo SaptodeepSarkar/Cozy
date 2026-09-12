@@ -60,7 +60,16 @@ uv pip install --python assistant/.venv/bin/python --quiet \
     faster-whisper librosa 'transformers>=4.51,<4.56' torch torchaudio \
     'nvidia-cublas-cu12>=12.4,<13' \
     'huggingface-hub>=0.34,<1' safetensors tokenizers pyyaml numpy \
-    peft trl accelerate kokoro silero-vad
+    peft trl accelerate kokoro silero-vad spacy
+
+# Kokoro's English phonemizer uses this separate spaCy pipeline. Install it
+# explicitly because spaCy otherwise tries to download a compatibility table
+# during Cozy startup, which makes offline startup look like a TTS crash.
+if ! assistant/.venv/bin/python -c 'import spacy; raise SystemExit(0 if spacy.util.is_package("en_core_web_sm") else 1)' 2>/dev/null; then
+    echo "[setup] Installing spaCy English model for Kokoro ..."
+    uv pip install --python assistant/.venv/bin/python --quiet \
+        https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+fi
 
 # 4. Download the LLM base model if it's not already on disk.
 # Qwen3-0.6B is small (~1.2 GB) and free. Required for `cozy` to start.
