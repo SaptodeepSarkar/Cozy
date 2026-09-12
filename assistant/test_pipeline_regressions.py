@@ -128,7 +128,14 @@ class PipelineTests(unittest.TestCase):
         cleaner.model_dir = Path("/missing/base")
         cleaner.adapter_dir = Path("/missing/adapter")
         cleaner.load()
+        self.assertEqual(cleaner.threshold, 0)
         self.assertEqual(cleaner.clean("um open open firefox"), "open firefox")
+
+    def test_tts_splits_replies_before_queueing(self):
+        self.assertEqual(
+            tts._text_chunks("First sentence. Second sentence!"),
+            ["First sentence.", "Second sentence!"],
+        )
 
     def test_tts_keeps_all_generated_segments_and_hashes_cache_keys(self):
         pipeline = Mock(return_value=iter([

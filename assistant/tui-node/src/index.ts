@@ -323,10 +323,16 @@ function eventLines(events: EngineEvent[]) {
   for (const event of events) {
     if (event.kind === "heard" || event.kind === "user_msg") {
       chunks.push(chunk("YOU\n", blue), ...markdownChunks(textField(event, "text"), ink), chunk("\n", ink));
+    } else if (event.kind === "llm") {
+      chunks.push(chunk(`  ▸ ${friendlyTool(textField(event, "tool"))}\n`, blue));
+      const args = textField(event, "args");
+      if (args) chunks.push(chunk(`    input: ${args.slice(0, 240)}\n`, muted));
     } else if (event.kind === "done") {
       chunks.push(chunk("COZY\n", green), ...markdownChunks(textField(event, "text"), ink), chunk("\n", ink));
     } else if (event.kind === "tool_result") {
-      chunks.push(chunk(`  ✓ ${friendlyTool(textField(event, "name"))}\n`, green));
+      const output = textField(event, "out").replace(/\s+/g, " ").trim();
+      const skipped = event.skipped === true ? " (already done)" : "";
+      chunks.push(chunk(`  ✓ ${friendlyTool(textField(event, "name"))}${skipped}${output ? ` · ${output.slice(0, 260)}` : ""}\n`, green));
     } else if (event.kind === "tool_fail") {
       chunks.push(chunk(`  × ${friendlyTool(textField(event, "name"))} failed\n`, red));
     } else if (event.kind === "rejected") {

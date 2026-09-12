@@ -313,9 +313,19 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                 # action. A hard cap prevents a malformed remote response from
                 # looping forever while still allowing browser workflows.
                 completed = []
+                completed_details = []
+                successful_actions = set()
+                duplicate_action = False
                 reply = ""
                 for _step in range(6):
                     json_emit("llm", tool=name, args=str(args)[:160], dt=_time.time() - t0)
+                    action_key = (name, json.dumps(args or {}, sort_keys=True, ensure_ascii=False))
+                    if action_key in successful_actions:
+                        duplicate_action = True
+                        output = "This exact action already succeeded in this task. Do not run it again; summarize the completed work."
+                        json_emit("tool_result", name=name, out=output, skipped=True)
+                        name, args = harness.continue_after_tool(name, output)
+                        break
                     if name == "rlm.delegate":
                         from rlm_harness.rlm import execute_delegate
                         result = {"ok": True, "output": execute_delegate(args or {}, harness)}
@@ -324,8 +334,11 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                     output = str(result.get("output", ""))
                     completed.append(name)
                     if result.get("ok"):
+                        successful_actions.add(action_key)
+                        completed_details.append(f"{name}: {output[:240] or 'completed'}")
                         json_emit("tool_result", name=name, out=output)
                     else:
+                        completed_details.append(f"{name}: failed - {output[:240] or 'no details'}")
                         json_emit("tool_fail", name=name, out=output)
                     name, args = harness.continue_after_tool(name, output)
                     try:
@@ -339,8 +352,14 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                     if tr.role == "assistant" and tr.content:
                         reply = tr.content
                         break
-                if name:
-                    reply = f"I completed {len(completed)} steps and stopped at the task limit."
+                if completed_details:
+                    detail_text = "\n".join(f"- {item}" for item in completed_details)
+                    if name and not duplicate_action:
+                        reply = f"I reached the action limit after completing these steps:\n{detail_text}"
+                    elif duplicate_action:
+                        reply = f"I completed these steps and ignored a repeated action:\n{detail_text}"
+                    else:
+                        reply = ((reply + "\n\n") if reply else "") + f"Completed steps:\n{detail_text}"
                 reply = _strip_reply_echo(reply or "Completed the requested action.")
                 if tts_enabled and is_available():
                     json_emit("tts", text=reply)

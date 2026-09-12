@@ -86,7 +86,7 @@ class TranscriptCleaner:
         self.tokenizer = None
         self.torch = None
         self.lock = threading.Lock()
-        self.threshold = max(1, int(os.environ.get("COZY_CLEANUP_WORD_THRESHOLD", "10")))
+        self.threshold = max(0, int(os.environ.get("COZY_CLEANUP_WORD_THRESHOLD", "0")))
         self.model_dir = Path(os.environ.get("COZY_CLEANUP_MODEL", ARCHFLOW_CLEANUP / "base-model"))
         self.adapter_dir = Path(os.environ.get("COZY_CLEANUP_ADAPTER", ARCHFLOW_CLEANUP / "dpo-sft"))
         self.status = "deterministic"

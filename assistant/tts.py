@@ -25,6 +25,7 @@ import json
 import sys
 import threading
 import warnings
+import re
 from pathlib import Path
 
 DEFAULT_VOICE = "af_heart"
@@ -156,18 +157,41 @@ def _synthesize(text: str) -> "tuple[object, int] | None":
     voice = cfg["voice"]
     speed = float(cfg["speed"])
     try:
-        # KPipeline may yield multiple sentence-sized chunks. Returning only
-        # the first one silently cut off longer replies.
-        chunks = []
-        for _gs, _ps, audio in p(text, voice=voice, speed=speed):
-            if audio is not None:
-                chunks.append(audio)
+        chunks = list(_synthesize_chunks(text, pipeline=p, voice=voice, speed=speed))
         if chunks:
             import numpy as np
             return np.concatenate([np.asarray(chunk).reshape(-1) for chunk in chunks]), 24000
     except Exception as exc:
         print(f"[tts] synth error: {exc}")
     return None
+
+
+def _synthesize_chunks(text: str, *, pipeline=None, voice=None, speed=None):
+    """Yield Kokoro audio as soon as each generated segment is available."""
+    p = pipeline or _get_pipeline()
+    if p is None:
+        return
+    cfg = _load_cfg()
+    for _gs, _ps, audio in p(
+        text, voice=voice or cfg["voice"], speed=speed or float(cfg["speed"]),
+    ):
+        if audio is not None:
+            yield audio
+
+
+def _text_chunks(text: str, max_chars: int = 180) -> list[str]:
+    """Split replies into natural speech chunks so the first sentence starts fast."""
+    pieces = [piece.strip() for piece in re.split(r"(?<=[.!?])\s+", text.strip()) if piece.strip()]
+    chunks = []
+    for piece in pieces:
+        while len(piece) > max_chars:
+            cut = piece.rfind(" ", 0, max_chars)
+            cut = cut if cut > 40 else max_chars
+            chunks.append(piece[:cut].strip())
+            piece = piece[cut:].strip()
+        if piece:
+            chunks.append(piece)
+    return chunks or [text.strip()]
 
 
 def _cache_path(text: str) -> Path:
@@ -211,16 +235,21 @@ def _ensure_worker():
                 if cache_path.exists():
                     _play(str(cache_path), 24000)
                 else:
-                    out = _synthesize(text)
-                    if out is not None:
-                        samples, sr = out
-                        # Save to cache for next time
+                    cfg = _load_cfg()
+                    generated = []
+                    for audio in _synthesize_chunks(text, voice=cfg["voice"], speed=float(cfg["speed"])):
+                        import numpy as np
+                        samples = np.asarray(audio).reshape(-1)
+                        generated.append(samples)
+                        # Playback starts on the first Kokoro segment instead
+                        # of waiting for the full response to synthesize.
+                        _play(samples, 24000)
+                    if generated:
                         try:
                             import soundfile as sf
-                            sf.write(str(cache_path), samples, sr)
+                            sf.write(str(cache_path), np.concatenate(generated), 24000)
                         except Exception:
                             pass
-                        _play(samples, sr)
             except Exception as exc:
                 print(f"[tts] worker error: {exc}")
             finally:
@@ -263,11 +292,12 @@ def speak(text: str, blocking: bool = False) -> None:
     if not is_available():
         return
     _ensure_worker()
-    try:
-        _speak_queue.put_nowait(text)
-    except _queue.Full:
-        _runtime_error("TTS queue is full; dropping reply")
-        return
+    for piece in _text_chunks(text):
+        try:
+            _speak_queue.put_nowait(piece)
+        except _queue.Full:
+            _runtime_error("TTS queue is full; dropping reply")
+            break
     if blocking:
         _speak_queue.join()
 
