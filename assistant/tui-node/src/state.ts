@@ -73,7 +73,9 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
       };
     }
     case "ready":
-      return { ...state, phase: "ready", fatalError: "", hasStarted: true, listeningStartedAt: 0, voiceEnabled: typeof event.voice === "boolean" ? event.voice : state.voiceEnabled };
+      return { ...state, phase: "ready", fatalError: "", hasStarted: true, listeningStartedAt: 0,
+        events: state.events.filter(item => item.kind !== "error"),
+        voiceEnabled: typeof event.voice === "boolean" ? event.voice : state.voiceEnabled };
     case "audio_status":
       return { ...state, micMuted: typeof event.muted === "boolean" ? event.muted : null };
     case "wake_score":

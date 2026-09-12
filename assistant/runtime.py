@@ -168,6 +168,15 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                and not (name == "tts" and not tts_enabled)
                and not (name == "wake" and (not voice or no_wake))
                and not (name == "stt" and not voice)]
+    # Import order matters even though model loading is parallel: Kokoro
+    # imports AlbertModel from Transformers. Complete those module imports
+    # once on the main thread so concurrent plugin startup cannot produce a
+    # transient "cannot import name AlbertModel" error.
+    if "tts" in enabled or "llm" in enabled or "cleanup" in enabled:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            import transformers  # noqa: F401
+            if "tts" in enabled:
+                import kokoro  # noqa: F401
     positions = {name: index for index, name in enumerate(enabled, start=1)}
     started = {name: _time.monotonic() for name in enabled}
     for name in enabled:
