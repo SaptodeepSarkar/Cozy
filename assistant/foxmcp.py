@@ -28,6 +28,17 @@ class FoxMCPClient:
         if not (self.root / "venv/bin/python").exists():
             raise FileNotFoundError(
                 f"FoxMCP is not installed at {self.root}. Run bash install_foxmcp.sh")
+        # Cozy may have been restarted while the previous bridge survived.
+        # Reuse a healthy MCP endpoint instead of creating a second process
+        # that will fight it for the extension WebSocket port.
+        if self._endpoint_is_up():
+            try:
+                self._initialize()
+                result = self._request("tools/list", {})
+                self.tools = (result.get("tools") if isinstance(result, dict) else []) or []
+                return self.tools
+            except Exception:
+                self.session_id = ""
         if self.root is not None:
             command = [str(self.root / "venv/bin/python"), str(self.root / "server/server.py"),
                        "--host", "127.0.0.1", "--port", self.ws_port,
@@ -63,16 +74,9 @@ class FoxMCPClient:
                 raise RuntimeError(
                     f"FoxMCP exited with code {self.process.returncode}"
                     + (f": {details}" if details else ""))
-            try:
-                with urllib.request.urlopen(self.base_url, timeout=1):
-                    return
-            except urllib.error.HTTPError as exc:
-                # FastMCP commonly answers a GET with 404/405 while its POST
-                # JSON-RPC endpoint is already ready.
-                if exc.code in {404, 405, 406, 426}:
-                    return
-                time.sleep(0.25)
-            except (urllib.error.URLError, TimeoutError, OSError):
+            if self._endpoint_is_up():
+                return
+            else:
                 time.sleep(0.25)
         log_path = Path(self.log_file.name) if self.log_file else None
         details = ""
@@ -80,6 +84,17 @@ class FoxMCPClient:
             details = log_path.read_text(encoding="utf-8", errors="replace")[-1200:].strip()
         raise TimeoutError(f"FoxMCP did not start at {self.base_url}"
                            + (f": {details}" if details else ""))
+
+    def _endpoint_is_up(self) -> bool:
+        try:
+            with urllib.request.urlopen(self.base_url, timeout=0.8):
+                return True
+        except urllib.error.HTTPError as exc:
+            # FastMCP commonly answers a GET with 404/405 while its POST
+            # JSON-RPC endpoint is already ready.
+            return exc.code in {404, 405, 406, 426}
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return False
 
     def _post(self, payload: dict) -> dict:
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
