@@ -16,6 +16,13 @@ bash train.sh --profile standard   # full LLM + STT pipeline
 bash train.sh --resume              # continue the last run after interruption
 ```
 
+Voice input uses the same final-input stack as ArchFlow/Vaani: silence trim,
+faster-whisper CT2 beam-1 decoding, decoder no-speech rejection, conservative
+filler/repetition polish, and—when the sibling ArchFlow cleanup artifacts are
+available—a persistent Qwen3-0.6B cleanup LoRA for utterances of ten or more
+words. Override its paths with `COZY_CLEANUP_MODEL` and
+`COZY_CLEANUP_ADAPTER`; set `COZY_CLEANUP_WORD_THRESHOLD` to tune the gate.
+
 Each run writes a revision/GPU manifest and one log per stage under
 `artifacts/training_runs/` (ignored generated output). Use `--dry-run` to review
 commands without starting training.

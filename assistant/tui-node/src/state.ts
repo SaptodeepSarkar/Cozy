@@ -23,7 +23,7 @@ export interface CozyState {
 
 export const initialState: CozyState = {
   phase: "starting",
-  models: { wake: "pending", stt: "pending", llm: "pending", tts: "pending" },
+  models: { wake: "pending", stt: "pending", llm: "pending", cleanup: "pending", tts: "pending" },
   events: [],
   audioLevel: 0,
   audioHistory: [],

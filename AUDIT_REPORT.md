@@ -231,6 +231,27 @@ and the invalid calculator fallback was removed.
 Verification: executor tests cover screenshot failure, missing apps, and
 missing setting parameters.
 
+### A-15 — Cozy omitted ArchFlow's input-quality layers (high)
+
+Cause: ArchFlow and Cozy use the same v1.2 Whisper-small CT2 weights (matching
+SHA-256), but Cozy returned every decoded segment verbatim. ArchFlow trims
+padding, rejects segments with decoder `no_speech_prob > 0.7`, removes fillers
+and accidental repetitions, and optionally applies a transcript-specific
+Qwen3-0.6B LoRA. The perceived difference was orchestration, not STT weights.
+
+Fix: port the same CT2 prompt/beam/independent-decoding settings, silence trim,
+segment rejection, and deterministic polish. Voice startup now also loads the
+same ArchFlow Qwen3-0.6B `dpo-sft` cleaner once and reuses it for transcripts of
+ten or more words. Model/adapter paths and the word threshold are configurable.
+If artifacts or CUDA are unavailable, input remains functional with the
+deterministic pass. Cleanup output is rejected if it changes numbers or
+negation, diverges excessively, emits control tokens, or changes length beyond
+safe bounds.
+
+Verification: tests cover no-speech segment rejection, prompt/decoding options,
+filler and repetition handling, preservation of intentional emphasis, rewrite
+safety, and model-unavailable fallback.
+
 ## Remaining product risks
 
 ### R-01 — raw LLM quality still requires a model release (high)
@@ -287,7 +308,7 @@ audio/build dependencies are unavailable.
 
 ## Verification record
 
-- Assistant Python tests: 45 passing after the playback regression addition.
+- Assistant Python tests: 48 passing after the input-layer additions.
 - OpenTUI reducer suite: 11 cases passing.
 - TypeScript: `tsc --noEmit` passing.
 - Python changed-file compilation: passing.
@@ -296,6 +317,11 @@ audio/build dependencies are unavailable.
 - Training smoke dry-run: passing; all generated model paths isolated.
 - Actual LLM GPU sample: completed on NVIDIA RTX 3050 6GB Laptop GPU;
   3/8 raw model, 8/8 deterministic runtime routing for the same categories.
+- ArchFlow-compatible input GPU smoke: Qwen3-0.6B `dpo-sft` loaded in 8.23
+  seconds cold and cleaned a 17-word sample in 2.77 seconds while preserving
+  both numbers, negation, and intentional emphasis. The complete wake + STT +
+  assistant LLM + cleanup LLM + TTS stack loaded together in 20.98 seconds and
+  freed cleanly, confirming it fits the target machine.
 - End-to-end NDJSON backend smoke: LLM startup completed in about 5.64 seconds;
   `what time is it` routed, executed and emitted `done` in about 1.4 ms;
   graceful Ctrl+C emitted `shutdown` and exited with code 0.

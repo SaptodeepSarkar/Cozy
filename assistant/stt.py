@@ -18,6 +18,11 @@ HF_DIR = _HF_V12 if (_HF_V12 / "model.safetensors").exists() else STT_ROOT / "ou
 
 sys.path.insert(0, str(STT_ROOT / "scripts"))
 
+DEFAULT_INITIAL_PROMPT = (
+    "Cozy assistant. Romanized Hindi words: aaj kaisa karo yaar nahi haan "
+    "theek hai batao kholo band karo volume brightness samay."
+)
+
 
 def _preload_ct2_cuda12():
     """Load CTranslate2's CUDA 12 BLAS beside a CUDA 13 system install."""
@@ -93,6 +98,15 @@ class CozySTT:
             raise ValueError("audio must be finite mono samples at 16 kHz")
         if not audio.size or not np.any(audio):
             return ""
+        # Match ArchFlow's final-input path: remove leading/trailing room
+        # padding while preserving 100 ms around the detected utterance.
+        threshold = float(os.environ.get("COZY_STT_TRIM_THRESHOLD", "0.003"))
+        active = np.flatnonzero(np.abs(audio) >= threshold)
+        if active.size:
+            margin = 1600
+            audio = audio[max(0, int(active[0]) - margin):min(audio.size, int(active[-1]) + margin + 1)]
+        else:
+            return ""
         configured_language = os.environ.get("COZY_STT_LANGUAGE", "en").strip()
         self._language = None if hinglish_hint or configured_language.lower() == "auto" else configured_language
         if self.prefer in ("auto", "ct2") and CT2_DIR.exists():
@@ -152,9 +166,20 @@ class CozySTT:
         # Capture already performs endpointing. A second VAD pass here can
         # remove quiet first/last words, and beam=3 adds avoidable latency for
         # short desktop commands.
-        segs, _ = model.transcribe(audio, language=getattr(self, "_language", "en"), beam_size=1,
-                                   condition_on_previous_text=False, vad_filter=False)
-        return " ".join(s.text.strip() for s in segs).strip()
+        prompt = os.environ.get("COZY_STT_PROMPT", DEFAULT_INITIAL_PROMPT).strip()
+        kwargs = dict(
+            language=getattr(self, "_language", "en"), beam_size=1,
+            condition_on_previous_text=False, vad_filter=False,
+        )
+        if prompt:
+            kwargs["initial_prompt"] = prompt
+        segs, _ = model.transcribe(audio, **kwargs)
+        # Whisper can produce fluent text from padding/noise. ArchFlow keeps
+        # only segments whose own decoder classifies them as speech.
+        return " ".join(
+            s.text.strip() for s in segs
+            if s.text.strip() and float(getattr(s, "no_speech_prob", 0.0)) <= 0.7
+        ).strip()
 
     def _run_hf(self, audio):
         import numpy as np

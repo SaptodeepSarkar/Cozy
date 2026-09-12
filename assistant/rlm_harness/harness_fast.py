@@ -105,6 +105,7 @@ class HarnessConfig:
     use_stt: bool = True
     use_tts: bool = True
     use_llm: bool = True
+    use_cleanup: bool = False
     use_vision: bool = False
     use_wake: bool = True
 
@@ -603,6 +604,9 @@ class FastHarness:
         if self.cfg.use_stt:
             from .plugins.stt import STTPlugin
             self.plugins["stt"] = STTPlugin(self.cfg)
+        if self.cfg.use_cleanup:
+            from .plugins.cleanup import CleanupPlugin
+            self.plugins["cleanup"] = CleanupPlugin(self.cfg)
         if self.cfg.use_tts:
             from .plugins.tts import TTSPlugin
             self.plugins["tts"] = TTSPlugin(self.cfg)

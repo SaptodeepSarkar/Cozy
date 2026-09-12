@@ -6,6 +6,7 @@ import stt
 import runtime
 import tts
 import executor
+from transcript_cleanup import TranscriptCleaner, _safe_rewrite, polish_transcript
 from rlm_harness.dataset_mode import parse_tool_call
 from rlm_harness.harness import RuleBackend
 
@@ -55,11 +56,38 @@ class PipelineTests(unittest.TestCase):
     def test_ct2_is_greedy_without_second_vad_cut(self):
         model = stt.CozySTT()
         engine = Mock()
-        engine.transcribe.return_value = ([Mock(text=" hello ")], None)
+        engine.transcribe.return_value = ([Mock(text=" hello ", no_speech_prob=0.0)], None)
         with patch.object(model, "_get_ct2", return_value=engine):
             self.assertEqual(model._run_ct2(np.ones(1600)), "hello")
         self.assertEqual(engine.transcribe.call_args.kwargs["beam_size"], 1)
         self.assertFalse(engine.transcribe.call_args.kwargs["vad_filter"])
+        self.assertTrue(engine.transcribe.call_args.kwargs["initial_prompt"])
+
+    def test_ct2_drops_decoder_marked_no_speech(self):
+        model = stt.CozySTT()
+        engine = Mock()
+        engine.transcribe.return_value = ([
+            Mock(text=" invented sentence ", no_speech_prob=0.91),
+            Mock(text=" real command ", no_speech_prob=0.08),
+        ], None)
+        with patch.object(model, "_get_ct2", return_value=engine):
+            self.assertEqual(model._run_ct2(np.ones(1600)), "real command")
+
+    def test_archflow_transcript_polish_is_conservative(self):
+        self.assertEqual(
+            polish_transcript("uh i can't i can't genuine genuinely move"),
+            "i can't genuinely move",
+        )
+        self.assertEqual(polish_transcript("very very good"), "very very good")
+        self.assertTrue(_safe_rewrite("set volume to 35 not 50", "Set volume to 35, not 50."))
+        self.assertFalse(_safe_rewrite("set volume to 35 not 50", "Set volume to 80."))
+
+    def test_cleanup_falls_back_to_rules_without_external_model(self):
+        cleaner = TranscriptCleaner()
+        cleaner.model_dir = Path("/missing/base")
+        cleaner.adapter_dir = Path("/missing/adapter")
+        cleaner.load()
+        self.assertEqual(cleaner.clean("um open open firefox"), "open firefox")
 
     def test_tts_keeps_all_generated_segments_and_hashes_cache_keys(self):
         pipeline = Mock(return_value=iter([

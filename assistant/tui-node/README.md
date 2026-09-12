@@ -15,7 +15,7 @@ processes through the guarded single-signal path. Set
 `COZY_PYTHON` or `COZY_RUNTIME` to override the backend paths for development.
 
 The loading view shows the canonical SVG-derived logo, one model at a time,
-elapsed seconds, and overall progress. The workspace keeps conversation output
+elapsed seconds, and overall progress, including the input-polish model. The workspace keeps conversation output
 stable across later wake events and provides a native focused input control.
 
 Runtime diagnostics: a muted input now shows “Microphone muted” and typed requests

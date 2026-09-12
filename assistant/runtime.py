@@ -134,7 +134,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
     # initialization failures on the 6 GB target machine.
     load_failures = []
     critical_failures = []
-    enabled = [name for name in ("wake", "stt", "llm", "tts")
+    enabled = [name for name in ("wake", "stt", "llm", "cleanup", "tts")
                if harness.plugins.get(name) is not None
                and not (name == "tts" and not tts_enabled)
                and not (name == "wake" and (not voice or no_wake))
@@ -159,7 +159,8 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                       total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2))
             json_emit("error", msg=f"{name} load: {exc}")
             _flush_emit()
-            break
+            if critical_failures:
+                break
     if critical_failures:
         json_emit("startup_failed", models=critical_failures,
                   msg="Model startup failed: " + ", ".join(critical_failures))
@@ -177,6 +178,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
     wake = getattr(wake_plugin, "_model", None)
     stt_plugin = harness.plugins.get("stt") if harness else None
     stt = getattr(stt_plugin, "_stt", None)
+    cleanup_plugin = harness.plugins.get("cleanup") if harness else None
     if voice and (stt is None or (not no_wake and wake is None)):
         json_emit("error", msg="wake/STT plugin did not initialize")
         return
@@ -472,6 +474,15 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         if not any(c.isalpha() for c in text):
             json_emit("rejected", reason="No recognizable command; please try again")
             return ""
+        if cleanup_plugin is not None:
+            try:
+                cleaned = cleanup_plugin.clean(text)
+                if cleaned:
+                    text = cleaned
+            except Exception as exc:
+                # Input cleanup is quality enhancement, never a reason to lose
+                # a successfully recognized command.
+                json_emit("error", msg=f"transcript cleanup failed: {exc}")
         json_emit("transcribed", text=text)
         return text
 
@@ -936,6 +947,7 @@ def main() -> None:
         cfg.use_wake = not args.text and not args.no_wake
         cfg.use_stt = not args.text
         cfg.use_llm = True
+        cfg.use_cleanup = not args.text
         cfg.use_tts = not args.no_tts
         # These plugins are owned by the continuous runtime until shutdown.
         cfg.idle_unload_s = float("inf")

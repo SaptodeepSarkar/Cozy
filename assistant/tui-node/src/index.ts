@@ -176,7 +176,7 @@ workspace.add(composer);
 
 function modelLine(name: ModelName, now: number) {
   const status = state.models[name];
-  const label = name === "wake" ? "Wake word" : name.toUpperCase();
+  const label = name === "wake" ? "Wake word" : name === "cleanup" ? "Input polish" : name.toUpperCase();
   const elapsed = status === "loading"
     ? Math.max(0, now - state.loadingStartedAt)
     : state.modelElapsed[name];
@@ -200,7 +200,7 @@ function eventLines(events: EngineEvent[]) {
 
 function updateUi() {
   const now = Date.now() / 1000;
-  const names: ModelName[] = ["wake", "stt", "llm", "tts"];
+  const names: ModelName[] = ["wake", "stt", "llm", "cleanup", "tts"];
   const failed = state.phase === "error";
   loadingHeadline.content = failed
     ? "Startup could not finish"
