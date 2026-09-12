@@ -99,6 +99,21 @@
       "desc": "Call a discovered FoxMCP Firefox tool. Use for navigation, tabs, page content, clicks, typing, downloads, uploads, bookmarks, and browser workflows."
     },
     {
+      "name": "python.kernel",
+      "params": {
+        "code": "string - Python code for bounded execution in Cozy's persistent IPython kernel"
+      },
+      "desc": "Run local Python for calculations, parsing attached files, and transforming research results. Output is capped and execution is time-limited."
+    },
+    {
+      "name": "mcp.call",
+      "params": {
+        "name": "string - namespaced MCP tool, mcp.server.tool",
+        "arguments": "object - arguments matching the configured MCP tool"
+      },
+      "desc": "Call any external MCP server configured in cozy.jsonc or OpenCode-compatible configuration."
+    },
+    {
       "name": "time.now",
       "params": {},
       "desc": "Speak current time/date"

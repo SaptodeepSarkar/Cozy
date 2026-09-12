@@ -161,7 +161,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
     # initialization failures on the 6 GB target machine.
     load_failures = []
     critical_failures = []
-    enabled = [name for name in ("wake", "stt", "llm", "foxmcp", "cleanup", "tts")
+    enabled = [name for name in ("wake", "stt", "llm", "foxmcp", "mcp", "cleanup", "tts")
                if harness.plugins.get(name) is not None
                and not (name == "tts" and not tts_enabled)
                and not (name == "wake" and (not voice or no_wake))
@@ -174,14 +174,17 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         _flush_emit()
         try:
             p_obj.load()
-            if name == "foxmcp":
+            if name in {"foxmcp", "mcp"}:
                 tools = getattr(p_obj, "tools", [])
-                harness.mcp_tools = tools
-                names = ", ".join(str(t.get("name")) for t in tools if t.get("name"))
+                harness.mcp_tools = list(getattr(harness, "mcp_tools", [])) + tools
+                names = ", ".join(
+                    str(t.get("name")) + (": " + str(t.get("description", ""))[:120]
+                                           if t.get("description") else "")
+                    for t in tools if t.get("name"))
                 if names:
                     harness.system += (
-                        "\nFoxMCP browser tools discovered at startup: " + names +
-                        ". Use browser.mcp with the exact tool name and arguments."
+                        "\nMCP tools discovered at startup: " + names +
+                        ". Use the matching MCP tool wrapper with exact arguments."
                     )
             json_emit("warmup", model=name, state="done", index=index,
                       total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2),

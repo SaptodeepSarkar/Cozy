@@ -85,6 +85,32 @@ extension, then start Cozy normally. FoxMCP starts during the OpenTUI loading
 screen, its tools are discovered before the assistant becomes ready, and every
 browser operation is included in the final task summary.
 
+### Files, Python kernel, and external MCP
+
+Attach a text file directly to a voice/task request with `@path/to/file`.
+Cozy bounds attachment text before it enters the LLM context. The agent can
+also use `python.kernel` for bounded calculations and parsing in a persistent
+IPython kernel; install dependencies with `uv sync` after changing the
+assistant environment.
+
+Copy `cozy.jsonc.example` to `cozy.jsonc` to add OpenCode-compatible MCP
+servers. Cozy discovers stdio and HTTP servers at startup and exposes their
+tools as `mcp.<server>.<tool>` through `mcp.call`:
+
+```jsonc
+{
+  "mcp": {
+    "filesystem": {
+      "type": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/home/me"]
+    }
+  }
+}
+```
+
+Keep credentials in the server's environment, never in the config committed
+to git. See `../handoff.md` for the model/context and dataset contract.
+
 ## venv auto-detection
 
 `runtime.py` automatically scans for the wakeword venv and adds its

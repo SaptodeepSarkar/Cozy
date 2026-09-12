@@ -34,6 +34,8 @@ dependencies = [
     "safetensors>=0.4",
     "tokenizers>=0.15",
     "bitsandbytes>=0.45; sys_platform == 'linux'",
+    "ipykernel>=6.29",
+    "jupyter-client>=8.6",
     # Utilities
     "pyyaml>=6.0",
 ]

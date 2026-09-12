@@ -671,6 +671,8 @@ HANDLERS = {
     "browser.search": browser_search,
     "browser.open_url": browser_open_url,
     "browser.mcp": lambda p: _foxmcp_call(p),
+    "python.kernel": lambda p: _python_kernel(p),
+    "mcp.call": lambda p: _mcp_call(p),
     "time.now": time_now,
     # v2 additions
     "timer.set": timer_set,
@@ -702,6 +704,29 @@ def _foxmcp_call(params):
         return True, call(name, arguments)
     except Exception as exc:
         return False, "FoxMCP error: " + str(exc)
+
+
+def _python_kernel(params):
+    code = params.get("code", "") if isinstance(params, dict) else ""
+    if not isinstance(code, str) or len(code) > 12000:
+        return False, "python.kernel requires code up to 12000 characters"
+    try:
+        from ipython_kernel import execute
+        return True, execute(code)
+    except Exception as exc:
+        return False, "Python kernel error: " + str(exc)
+
+
+def _mcp_call(params):
+    name = str(params.get("name", "")).strip()
+    arguments = params.get("arguments") or {}
+    if not name or not isinstance(arguments, dict):
+        return False, "mcp.call requires a namespaced tool name and object arguments"
+    try:
+        from mcp_client import call
+        return True, call(name, arguments)
+    except Exception as exc:
+        return False, "MCP error: " + str(exc)
 
 
 from system_tools import HANDLERS as SYSTEM_HANDLERS

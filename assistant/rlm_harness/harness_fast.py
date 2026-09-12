@@ -92,14 +92,15 @@ HARNESS_STATE_FILE = STATE_DIR / "state.json"
 class HarnessConfig:
     """All tunables in one place. Override via env vars (COZY_*)."""
     # Context budget
-    max_context_tokens: int = 1100           # total prompt budget
-    compact_threshold: int = 900             # when to compact
+    max_context_tokens: int = 1800           # total prompt budget
+    compact_threshold: int = 1400           # when to compact
     compact_window: int = 6                 # how many old turns to summarize
     recent_turns: int = 8                   # keep last N raw in RAM
 
     # RAM / disk
     state_dir: Path = STATE_DIR
     trace_file: Path = TRACE_FILE
+    summary_file: Path = SUMMARY_FILE
 
     # Plugins
     use_stt: bool = True
@@ -108,6 +109,7 @@ class HarnessConfig:
     use_cleanup: bool = False
     use_vision: bool = False
     use_foxmcp: bool = True
+    use_mcp: bool = True
     use_wake: bool = True
 
     # Lazy load
@@ -227,13 +229,13 @@ class Trace:
         self._recent = recent[-self.cfg.recent_turns:]
 
     def _load_summary(self) -> None:
-        if SUMMARY_FILE.exists():
-            self._summary = SUMMARY_FILE.read_text().strip()
+        if self.cfg.summary_file.exists():
+            self._summary = self.cfg.summary_file.read_text().strip()
 
     def _save_summary(self) -> None:
         # Summary is just a tiny text file; atomic write avoids
         # mid-write corruption if the process dies while flushing.
-        _atomic_write_text(SUMMARY_FILE, self._summary)
+        _atomic_write_text(self.cfg.summary_file, self._summary)
 
     # ----------------- mutators
     def append(self, turn: Turn) -> None:
@@ -328,13 +330,22 @@ class Trace:
         # schema may itself be large, so reserve a small conversation floor
         # rather than accidentally dropping the current user message.
         base_chars = sum(len(json.dumps(m, ensure_ascii=False)) for m in msgs)
-        conversation_budget = max(800, self.cfg.max_context_tokens * 4 - base_chars)
+        conversation_budget = max(256, self.cfg.max_context_tokens * 4 - base_chars)
         selected = []
         used = 0
         for message in reversed(recent_msgs):
             size = len(json.dumps(message, ensure_ascii=False))
             if selected and used + size > conversation_budget:
                 break
+            if not selected and size > conversation_budget:
+                # Always preserve the newest user/tool event, but cap a large
+                # attachment or tool result to the remaining context budget.
+                clipped = dict(message)
+                if isinstance(clipped.get("content"), str):
+                    keep = max(64, conversation_budget - 120)
+                    clipped["content"] = clipped["content"][:keep] + "\n[context clipped]"
+                    message = clipped
+                    size = len(json.dumps(message, ensure_ascii=False))
             selected.append(message)
             used += size
         msgs.extend(reversed(selected))
@@ -621,6 +632,9 @@ class FastHarness:
         if self.cfg.use_foxmcp:
             from .plugins.foxmcp import FoxMCPPlugin
             self.plugins["foxmcp"] = FoxMCPPlugin(self.cfg)
+        if self.cfg.use_mcp:
+            from .plugins.mcp import MCPPlugin
+            self.plugins["mcp"] = MCPPlugin(self.cfg)
 
     def get(self, name: str) -> Plugin | None:
         return self.plugins.get(name)
@@ -629,7 +643,14 @@ class FastHarness:
             """Append the user's turn, run the LLM, return (tool_name, args).
             ``tool_name`` is empty if the model replied with text only.
             """
-            # 1. Record the user turn
+            # 1. Expand explicit @file references with bounded content before
+            # recording the turn, so attachments become part of the trace.
+            try:
+                from attachments import render as render_attachments
+                user_text, _ = render_attachments(user_text)
+            except Exception:
+                pass
+            # 2. Record the user turn
             self.trace.append(Turn(role="user", content=user_text,
                                     producer="user"))
             # High-confidence desktop commands should not wait for, or be
