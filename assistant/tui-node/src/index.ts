@@ -1,13 +1,15 @@
 import {
   BoxRenderable,
   CliRenderEvents,
-  ImageRenderable,
   InputRenderable,
   InputRenderableEvents,
+  RGBA,
   ScrollBoxRenderable,
+  StyledText,
   TextRenderable,
   createCliRenderer,
   type CliRenderer,
+  type TextChunk,
 } from "@opentui/core";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -19,7 +21,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..", "..", "..");
 const python = process.env.COZY_PYTHON || resolve(root, "assistant", ".venv", "bin", "python");
 const runtime = process.env.COZY_RUNTIME || resolve(root, "assistant", "runtime.py");
-const logo = resolve(here, "..", "assets", "cozy-logo.png");
 
 class EngineSupervisor {
   private child?: ChildProcessWithoutNullStreams;
@@ -95,13 +96,35 @@ class EngineSupervisor {
   }
 }
 
+// True Terminal v2 tokens — ink-black mono terminal. No panels, no glow,
+// no orange. See docs/cozy-ui-true-terminal.md.
 const colors = {
-  page: "#080B14", panel: "#111827", panel2: "#172033", ink: "#F8FAFC",
-  muted: "#94A3B8", violet: "#8B5CF6", cyan: "#22D3EE", green: "#34D399",
-  red: "#FB7185", track: "#263248",
+  page: "#0b0d10",
+  ink: "#d0d6e0",
+  muted: "#5c6370",
+  faint: "#3b3b3b",
+  green: "#c3e88d",
+  blue: "#7aa2f7",
+  peach: "#e0c07c",
+  red: "#ff6b6b",
+  track: "#23272f",
 };
 
-const renderer = await createCliRenderer({ exitOnCtrlC: true, useMouse: true });
+const CAT = "|\\__/,|\n_.|o o  |_\n-(((---(((";
+const SEP = "─".repeat(76);
+const MODEL_NAMES: ModelName[] = ["wake", "stt", "llm", "cleanup", "tts"];
+
+const ink = RGBA.fromHex(colors.ink);
+const muted = RGBA.fromHex(colors.muted);
+const green = RGBA.fromHex(colors.green);
+const blue = RGBA.fromHex(colors.blue);
+const red = RGBA.fromHex(colors.red);
+
+function chunk(text: string, fg: RGBA = muted): TextChunk {
+  return { __isChunk: true, text, fg };
+}
+
+const renderer: CliRenderer = await createCliRenderer({ exitOnCtrlC: true, useMouse: true });
 const supervisor = new EngineSupervisor();
 let state: CozyState = initialState;
 let closing = false;
@@ -118,94 +141,109 @@ const loadingScreen = new BoxRenderable(renderer, {
   justifyContent: "center", backgroundColor: colors.page, gap: 1,
 });
 page.add(loadingScreen);
-loadingScreen.add(new ImageRenderable(renderer, { source: logo, width: 18, height: 9, fit: "fit", protocol: "auto" }));
-loadingScreen.add(new TextRenderable(renderer, { content: "COZY", fg: colors.ink, height: 1 }));
-const loadingHeadline = new TextRenderable(renderer, { content: "Starting your assistant", fg: colors.muted, height: 1 });
-loadingScreen.add(loadingHeadline);
-const progressTrack = new BoxRenderable(renderer, { width: 48, height: 1, backgroundColor: colors.track, shouldFill: true });
-const progressFill = new BoxRenderable(renderer, { width: "1%", height: 1, backgroundColor: colors.violet, shouldFill: true });
+const loadCol = new BoxRenderable(renderer, {
+  width: 76, flexDirection: "column", gap: 1,
+});
+loadingScreen.add(loadCol);
+loadCol.add(new TextRenderable(renderer, { content: CAT, fg: colors.ink, height: 3 }));
+const loadingHeadline = new TextRenderable(renderer, { content: "preparing models…", fg: colors.muted, height: 1 });
+loadCol.add(loadingHeadline);
+const progressTrack = new BoxRenderable(renderer, { width: 60, height: 1, backgroundColor: colors.track });
+const progressFill = new BoxRenderable(renderer, { width: "1%", height: 1, backgroundColor: colors.blue });
 progressTrack.add(progressFill);
-loadingScreen.add(progressTrack);
-const modelRows = new TextRenderable(renderer, { content: "", fg: colors.muted, width: 48, height: 6 });
-loadingScreen.add(modelRows);
-const startupError = new TextRenderable(renderer, { content: "", fg: colors.red, width: 60, height: 2, wrapMode: "word" });
-loadingScreen.add(startupError);
-loadingScreen.add(new TextRenderable(renderer, { content: "Ctrl+C  Exit", fg: colors.muted, height: 1 }));
+loadCol.add(progressTrack);
+const loadPills = new TextRenderable(renderer, { content: "", fg: colors.muted, width: 76, height: 1 });
+loadCol.add(loadPills);
+const startupError = new TextRenderable(renderer, { content: "", fg: colors.red, width: 76, height: 2, wrapMode: "word" });
+loadCol.add(startupError);
+loadCol.add(new TextRenderable(renderer, { content: 'tip: say "hey cozy" • offline • cuda:0', fg: colors.faint, height: 1 }));
+loadCol.add(new TextRenderable(renderer, { content: "ctrl+c quit", fg: colors.faint, height: 1 }));
 
 const workspace = new BoxRenderable(renderer, {
   visible: false, width: "100%", height: "100%", flexDirection: "column",
-  backgroundColor: colors.page, padding: 1, gap: 1,
+  backgroundColor: colors.page, alignItems: "center", padding: 1,
 });
 page.add(workspace);
+const col = new BoxRenderable(renderer, {
+  width: 76, height: "100%", flexDirection: "column", gap: 1,
+});
+workspace.add(col);
 const header = new BoxRenderable(renderer, {
-  width: "100%", height: 3, backgroundColor: colors.panel, paddingX: 2,
-  flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+  width: "100%", height: 3, flexDirection: "row", alignItems: "center",
+  justifyContent: "space-between",
 });
-header.add(new TextRenderable(renderer, { content: "COZY", fg: colors.ink, width: 12, height: 1 }));
-const phaseText = new TextRenderable(renderer, { content: "Ready", fg: colors.green, width: 24, height: 1 });
-header.add(phaseText);
-workspace.add(header);
+header.add(new TextRenderable(renderer, { content: CAT, fg: colors.ink, width: 30, height: 3 }));
+const headerRight = new BoxRenderable(renderer, {
+  flexDirection: "column", alignItems: "flex-end",
+});
+headerRight.add(new TextRenderable(renderer, { content: "Cozy ui v0.1", fg: colors.muted, height: 1 }));
+const phaseText = new TextRenderable(renderer, { content: "● starting", fg: colors.muted, height: 1 });
+headerRight.add(phaseText);
+header.add(headerRight);
+col.add(header);
+const pillsLine = new TextRenderable(renderer, { content: "", fg: colors.muted, width: "100%", height: 1 });
+col.add(pillsLine);
+col.add(new TextRenderable(renderer, { content: SEP, fg: colors.track, height: 1 }));
 
-const body = new BoxRenderable(renderer, { width: "100%", flexGrow: 1, flexDirection: "row", gap: 1 });
-const sidebar = new BoxRenderable(renderer, { width: 25, height: "100%", backgroundColor: colors.panel, padding: 1, flexDirection: "column", gap: 1 });
-sidebar.add(new TextRenderable(renderer, { content: "VOICE PIPELINE", fg: colors.muted, height: 1 }));
-const pipelineText = new TextRenderable(renderer, { content: "", fg: colors.ink, width: "100%", height: 7 });
-sidebar.add(pipelineText);
-sidebar.add(new TextRenderable(renderer, { content: "Say “Hey Cozy”\nor type below.", fg: colors.muted, width: "100%", height: 3, wrapMode: "word" }));
-body.add(sidebar);
 const conversation = new ScrollBoxRenderable(renderer, {
-  flexGrow: 1, height: "100%", backgroundColor: colors.panel, padding: 2,
-  scrollY: true, stickyScroll: true, stickyStart: "bottom",
+  flexGrow: 1, width: "100%", scrollY: true, stickyScroll: true, stickyStart: "bottom",
 });
-const conversationText = new TextRenderable(renderer, { content: "Cozy is ready.\n", fg: colors.ink, width: "100%", wrapMode: "word" });
+const conversationText = new TextRenderable(renderer, { content: 'Say "hey cozy" or press space to talk.\n', fg: colors.ink, width: "100%", wrapMode: "word" });
 conversation.add(conversationText);
-body.add(conversation);
-workspace.add(body);
+col.add(conversation);
 
+col.add(new TextRenderable(renderer, { content: SEP, fg: colors.track, height: 1 }));
 const composer = new BoxRenderable(renderer, {
-  width: "100%", height: 3, backgroundColor: colors.panel2, paddingX: 2,
-  flexDirection: "row", alignItems: "center",
+  width: "100%", height: 1, flexDirection: "row", alignItems: "center",
 });
-composer.add(new TextRenderable(renderer, { content: ">", fg: colors.cyan, width: 3, height: 1 }));
+composer.add(new TextRenderable(renderer, { content: ">", fg: colors.blue, width: 2, height: 1 }));
 const input = new InputRenderable(renderer, {
-  flexGrow: 1, value: "", placeholder: "Type a command…", placeholderColor: colors.muted,
-  textColor: colors.ink, cursorColor: colors.cyan, maxLength: 500,
+  flexGrow: 1, value: "", placeholder: 'say "hey cozy" or type…', placeholderColor: colors.muted,
+  textColor: colors.ink, cursorColor: colors.blue, maxLength: 500,
 });
 composer.add(input);
-workspace.add(composer);
+col.add(composer);
+col.add(new TextRenderable(renderer, { content: "ctrl+c quit • space talk • esc cancel", fg: colors.faint, height: 1 }));
 
-function modelLine(name: ModelName, now: number) {
-  const status = state.models[name];
-  const label = name === "wake" ? "Wake word" : name === "cleanup" ? "Input polish" : name.toUpperCase();
-  const elapsed = status === "loading"
-    ? Math.max(0, now - state.loadingStartedAt)
-    : state.modelElapsed[name];
-  const mark = status === "done" ? "●" : status === "failed" ? "×" : status === "loading" ? "◉" : "○";
-  return `${mark}  ${label.padEnd(14)}${elapsed === undefined ? "" : `${elapsed.toFixed(1)}s`}`;
+function pillChunks(now: number): TextChunk[] {
+  const chunks: TextChunk[] = [];
+  for (const name of MODEL_NAMES) {
+    const status = state.models[name];
+    const elapsed = status === "loading"
+      ? Math.max(0, now - state.loadingStartedAt)
+      : state.modelElapsed[name];
+    const mark = status === "done" ? "●" : status === "failed" ? "×" : status === "loading" ? "◉" : "○";
+    const color = status === "done" ? green : status === "failed" ? red : status === "loading" ? blue : muted;
+    chunks.push(chunk("[", muted), chunk(name, ink), chunk(mark, color));
+    chunks.push(chunk(`]${elapsed === undefined ? "" : ` ${elapsed.toFixed(1)}s`}  `, muted));
+  }
+  return chunks;
 }
 
 function eventLines(events: EngineEvent[]) {
   const lines: string[] = [];
   for (const event of events) {
-    if (event.kind === "heard" || event.kind === "user_msg") lines.push(`YOU\n${textField(event, "text")}\n`);
-    else if (event.kind === "done") lines.push(`COZY\n${textField(event, "text")}\n`);
-    else if (event.kind === "llm") lines.push(`ACTION\n${textField(event, "tool")}\n`);
-    else if (event.kind === "tool_result") lines.push(`DONE\n${textField(event, "name")}\n`);
-    else if (event.kind === "rejected") lines.push(`NOTICE\n${textField(event, "reason")}\n`);
-    else if (event.kind === "error") lines.push(`ERROR\n${textField(event, "msg")}\n`);
-    else if (event.kind === "backend_crash") lines.push(`ENGINE\n${textField(event, "message")}\n`);
+    if (event.kind === "heard" || event.kind === "user_msg") lines.push(`> ${textField(event, "text")}\n`);
+    else if (event.kind === "done") lines.push(`${textField(event, "text")}\n`);
+    else if (event.kind === "llm") lines.push(`→ ${textField(event, "tool")}\n`);
+    else if (event.kind === "tool_result") lines.push(`✓ ${textField(event, "name")}\n`);
+    else if (event.kind === "rejected") lines.push(`! ${textField(event, "reason")}\n`);
+    else if (event.kind === "error") lines.push(`× ${textField(event, "msg")}\n`);
+    else if (event.kind === "backend_crash") lines.push(`× engine: ${textField(event, "message")}\n`);
   }
-  return lines.join("\n") || "Cozy is ready.\n";
+  return lines.join("\n") || 'Say "hey cozy" or press space to talk.\n';
 }
 
 function updateUi() {
   const now = Date.now() / 1000;
-  const names: ModelName[] = ["wake", "stt", "llm", "cleanup", "tts"];
   const failed = state.phase === "error";
+  const active = MODEL_NAMES.find(name => state.models[name] === "loading");
   loadingHeadline.content = failed
-    ? "Startup could not finish"
-    : state.loadingModel ? `Loading ${state.loadingModel.toUpperCase()}  ${Math.max(0, now - state.loadingStartedAt).toFixed(1)}s` : "Preparing models…";
-  modelRows.content = names.map(name => modelLine(name, now)).join("\n");
+    ? "startup could not finish"
+    : active ? `warming ${active}… ${Math.max(0, now - state.loadingStartedAt).toFixed(1)}s` : "preparing models…";
+  const pills = new StyledText(pillChunks(now));
+  loadPills.content = pills;
+  pillsLine.content = pills;
   progressFill.width = `${Math.max(1, Math.round(state.startupProgress * 100))}%`;
   startupError.content = failed ? state.fatalError : "";
 
@@ -213,8 +251,13 @@ function updateUi() {
   loadingScreen.visible = !ready;
   workspace.visible = ready;
   if (ready) {
-    phaseText.content = state.phase === "ready" ? "● Ready" : `● ${state.phase[0].toUpperCase()}${state.phase.slice(1)}`;
-    pipelineText.content = names.map(name => modelLine(name, now)).join("\n");
+    const phaseColor = state.phase === "ready" ? colors.green
+      : state.phase === "error" ? colors.red
+      : state.phase === "thinking" || state.phase === "speaking" ? colors.peach
+      : state.phase === "listening" || state.phase === "capturing" || state.phase === "transcribing" ? colors.blue
+      : colors.muted;
+    phaseText.content = `● ${state.phase}`;
+    phaseText.fg = phaseColor;
     conversationText.content = eventLines(state.events);
     input.focus();
   }
