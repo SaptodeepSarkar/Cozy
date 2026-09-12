@@ -137,7 +137,7 @@ const colors = {
 
 const CAT = "|\\__/,|\n_.|o o  |_\n-(((---(((";
 const SEP = "─".repeat(76);
-const MODEL_NAMES: ModelName[] = ["wake", "stt", "llm", "cleanup", "tts"];
+const MODEL_NAMES: ModelName[] = ["wake", "stt", "llm", "foxmcp", "cleanup", "tts"];
 
 const ink = RGBA.fromHex(colors.ink);
 const muted = RGBA.fromHex(colors.muted);

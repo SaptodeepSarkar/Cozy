@@ -4,10 +4,8 @@
     wake word -> capture -> STT (faster-whisper) -> LLM (Qwen3 tool call)
     -> executor
 
-Modes:
-    python runtime.py                 # full voice loop
-    python runtime.py --text          # type commands instead (test LLM+exec)
-    python runtime.py --no-wake       # skip wake gate, always transcribe
+Mode:
+    python runtime.py                 # full voice loop (OpenTUI uses --json-events)
 """
 from __future__ import annotations
 
@@ -163,7 +161,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
     # initialization failures on the 6 GB target machine.
     load_failures = []
     critical_failures = []
-    enabled = [name for name in ("wake", "stt", "llm", "cleanup", "tts")
+    enabled = [name for name in ("wake", "stt", "llm", "foxmcp", "cleanup", "tts")
                if harness.plugins.get(name) is not None
                and not (name == "tts" and not tts_enabled)
                and not (name == "wake" and (not voice or no_wake))
@@ -176,13 +174,22 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         _flush_emit()
         try:
             p_obj.load()
+            if name == "foxmcp":
+                tools = getattr(p_obj, "tools", [])
+                harness.mcp_tools = tools
+                names = ", ".join(str(t.get("name")) for t in tools if t.get("name"))
+                if names:
+                    harness.system += (
+                        "\nFoxMCP browser tools discovered at startup: " + names +
+                        ". Use browser.mcp with the exact tool name and arguments."
+                    )
             json_emit("warmup", model=name, state="done", index=index,
                       total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2),
                       progress=index / max(1, len(enabled)))
             _flush_emit()
         except Exception as exc:
             load_failures.append(name)
-            if name in {"llm", "stt", "tts"} or (name == "wake" and voice and not no_wake):
+            if name in {"llm", "stt", "tts", "foxmcp"} or (name == "wake" and voice and not no_wake):
                 critical_failures.append(name)
             json_emit("warmup", model=name, state="failed", index=index,
                       total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2))
@@ -943,8 +950,6 @@ def handle_text(text, tok, llm, speak, fast_harness=None):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--text", action="store_true",
-                        help="type commands instead of speaking")
     parser.add_argument("--no-wake", action="store_true",
                         help="skip wake word gate (voice loop still on)")
     parser.add_argument("--threshold", type=float, default=None)
@@ -956,10 +961,6 @@ def main() -> None:
                         help="use the SFT-only merged model (default is SFT+DPO)")
     parser.add_argument("--json-events", action="store_true",
                         help="emit NDJSON events on stdout for the Node TUI")
-    parser.add_argument("--fast-harness", action="store_true",
-                        help="(internal) the default is already the fast harness")
-    parser.add_argument("--harness-only", action="store_true",
-                        help="test the harness without loading LLM/STT/wake (rules only)")
     args = parser.parse_args()
     _json_mode[0] = args.json_events
     if _json_mode[0]:
@@ -967,18 +968,16 @@ def main() -> None:
         import sys as _sys
         _sys.stdout.reconfigure(line_buffering=True)
 
-    # Default (no flags) AND we have a TTY: launch the textual TUI with
-    # voice listening. This is the one-liner `cozy` that the user wants.
-    # --json-events: run the voice loop and emit NDJSON to stdout.
-    # The OpenTUI frontend consumes this. No textual app overhead.
+    # OpenTUI consumes the JSON event stream. Direct runtime invocation keeps
+    # the same voice engine without providing a second user interface.
     if args.json_events:
         from rlm_harness.harness_fast import FastHarness, HarnessConfig
         from executor import execute as executor_execute
         cfg = HarnessConfig()
-        cfg.use_wake = not args.text and not args.no_wake
-        cfg.use_stt = not args.text
+        cfg.use_wake = not args.no_wake
+        cfg.use_stt = True
         cfg.use_llm = True
-        cfg.use_cleanup = not args.text
+        cfg.use_cleanup = True
         cfg.use_tts = not args.no_tts
         # These plugins are owned by the continuous runtime until shutdown.
         cfg.idle_unload_s = float("inf")
@@ -987,42 +986,8 @@ def main() -> None:
         if not 0.0 <= threshold <= 1.0:
             parser.error("--threshold must be between 0 and 1")
         run_json_mode(h, executor_execute, threshold,
-                      voice=not args.text, no_wake=args.no_wake, tts_enabled=not args.no_tts)
+                      voice=True, no_wake=args.no_wake, tts_enabled=not args.no_tts)
         return
-
-    is_default_mode = (
-        not args.text and
-        not args.calibrate and
-        not args.harness_only and
-        not args.no_wake and
-        not args.json_events and
-        sys.stdout.isatty()
-    )
-    if is_default_mode:
-        from rlm_harness.harness_fast import FastHarness, HarnessConfig
-        from tui_textual import run_textual
-        from executor import execute as executor_execute
-        cfg = HarnessConfig()
-        cfg.use_wake = True
-        cfg.use_stt = True
-        cfg.use_tts = not args.no_tts
-        cfg.use_llm = True
-        h = FastHarness(cfg)
-        # Threshold: use the eval-optimal 0.5, not the over-sensitive 0.30
-        # that caused the false-positive wake fires in the earlier build.
-        threshold = _default_wake_threshold()
-        if not args.no_tts and hasattr(args, "no_tts"):
-            pass  # threshold tunable in voice.cfg in a future revision
-        run_textual(h, executor_execute, voice_mode=True, threshold=threshold)
-        return
-
-    # If --no-tts, swap the speak callback for a no-op so we never load Kokoro
-    # or touch the audio device.
-    if args.no_tts:
-        global _noop_speak
-        def _noop_speak(text):
-            print(f"(no-tts) {text}")
-        # patch the helper to swap speak globally below
 
 
     # Default threshold comes from the trained model's eval JSON
@@ -1068,52 +1033,18 @@ def main() -> None:
         print()
         return
 
-    # --text: textual TUI with input prompt (no voice).
-    # The TUI needs a TTY; if stdin is not a TTY, fall through to the
-    # legacy input() loop (which exits cleanly on EOF).
-    if args.json_events:
-        # The OpenTUI frontend consumes NDJSON on stdout. It provides its
-        # own raw-mode terminal handling, so the runtime doesn't need
-        # a TTY to operate.
-        from rlm_harness.harness_fast import FastHarness, HarnessConfig
-        from executor import execute as executor_execute
-        cfg = HarnessConfig()
-        cfg.use_llm = True
-        h = FastHarness(cfg)
-        run_json_mode(h, executor_execute, args.threshold or 0.5)
-        return
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        from rlm_harness.harness_fast import FastHarness, HarnessConfig
-        from tui_textual import run_textual
-        from executor import execute as executor_execute
-        if args.fast_harness:
-            h = FastHarness()
-        else:
-            cfg = HarnessConfig()
-            cfg.use_llm = True
-            h = FastHarness(cfg)
-        # Don't pre-load the LLM - the TUI runs warmup() in a background
-        # thread and shows a "loading" state. This way the TUI mounts
-        # instantly (no 20s block) and the user can see progress.
-        run_textual(h, executor_execute, voice_mode=False)
-        return
-    # Non-TTY fallback: simple input() loop (good for piped tests)
-    if not sys.stdin.isatty():
-        print("cozy --text needs a TTY; use `cozy --harness-only` for non-interactive tests",
-              file=sys.stderr)
-        return
-    tok, llm = (None, None)
-    fast_harness = None
-    if args.fast_harness:
-        from rlm_harness.harness_fast import FastHarness
-        fast_harness = FastHarness()
-    else:
-        tok, llm = load_llm(use_dpo=not args.sft_only)
-    from rlm_harness.tui import TUI
+    from rlm_harness.harness_fast import FastHarness, HarnessConfig
     from executor import execute as executor_execute
-    tui = TUI(fast_harness if fast_harness else None, executor_execute, None)
-    tui.run_forever()
-    return
+    cfg = HarnessConfig()
+    cfg.use_wake = not args.no_wake
+    cfg.use_stt = True
+    cfg.use_llm = True
+    cfg.use_cleanup = True
+    cfg.use_tts = not args.no_tts
+    cfg.idle_unload_s = float("inf")
+    h = FastHarness(cfg)
+    run_json_mode(h, executor_execute, threshold,
+                  voice=True, no_wake=args.no_wake, tts_enabled=not args.no_tts)
 
 
 if __name__ == "__main__":

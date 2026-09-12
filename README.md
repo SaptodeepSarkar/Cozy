@@ -61,7 +61,6 @@ bash setup.sh
 
 # Talk to Cozy
 bash run.sh                 # full voice loop
-bash run.sh --text          # type commands instead
 bash run.sh --no-wake       # skip wake gate
 bash run.sh --calibrate     # print live wake scores for 30s
 bash run.sh --threshold 0.50
@@ -249,7 +248,7 @@ training set; rerun `sft_qwen.py` to train the next iteration.
 Cozy/
 ├── setup.sh              one-shot environment installer
 ├── run.sh                launch the assistant
-├── cozy                  alias-style launcher (cozy --text, --status, etc.)
+├── cozy                  OpenTUI launcher and model status commands
 ├── cozy.shell            shell-alias source (added by setup.sh)
 ├── README.md             this file
 ├── AGENTS.md             AI-agent conventions

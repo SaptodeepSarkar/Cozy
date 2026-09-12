@@ -15,7 +15,6 @@ dependencies. To run:
 ```bash
 # from the repo root
 bash run.sh                            # full voice loop
-bash run.sh --text                     # type commands instead
 bash run.sh --no-wake                  # skip wake gate (always transcribe)
 bash run.sh --calibrate                # 30s live wake-score log
 bash run.sh --threshold 0.50          # custom wake threshold
@@ -41,10 +40,10 @@ uv venv .venv --python 3.11
 |---|---|
 | `runtime.py` | Main voice loop (wake → STT → LLM → executor) |
 | `stt.py` | Dual-engine STT wrapper: fast CT2 with HF fallback |
-| `bridge.py` | Rule-based intent router; LLM chat fallback |
 | `intents.py` | Intent definitions (set_volume, open_app, ...) |
 | `executor.py` | Tool implementations (system.volume.set, etc.) |
 | `sft_qwen.py` | LLM SFT trainer (LoRA on Qwen3-0.6B) |
+| `../train_agent_qlora.sh` | 6 GB-safe QLoRA trainer for the larger action model |
 | `make_dataset.py` | Function-call dataset generator |
 | `model/cozy-llm-v1/` | Qwen3-0.6B base model |
 | `model/cozy-llm-v1-adapter/` | LoRA adapter (40 MB) |
@@ -56,7 +55,6 @@ uv venv .venv --python 3.11
 | Mode | Description |
 |---|---|
 | (default) | Live mic: wake → record command → STT → LLM → executor |
-| `--text` | Type commands instead of speaking (good for testing LLM) |
 | `--no-wake` | Skip wake word; always record + transcribe |
 | `--calibrate` | 30 s live wake-score log; prints peak score per inference |
 | `--threshold N` | Custom wake threshold (default reads from `wakeword/output/hey_cozy/hey_cozy_eval.json`) |
@@ -67,6 +65,25 @@ uv venv .venv --python 3.11
 - **STT**: `../stt-finetune/output/cozy_stt_v1_ct2_int8` (CTranslate2 int8)
   with HF fallback at `../stt-finetune/output/hf_finetuned`
 - **LLM**: `model/cozy-llm-v1/` (Qwen3-0.6B base, bf16) + `model/cozy-llm-v1-adapter/` (LoRA r=16, alpha=32)
+
+For stronger tool selection, use the frozen 7B-class Qwen2.5-Instruct base:
+
+```bash
+COZY_AGENT_BASE=Qwen/Qwen2.5-7B-Instruct bash train_agent_qlora.sh
+COZY_LLM_BASE=Qwen/Qwen2.5-7B-Instruct \
+COZY_LLM_ADAPTER=assistant/model/cozy-agent-adapter COZY_LLM_4BIT=1 \
+bash run.sh
+```
+
+Only the adapter is retrained when tools or examples change; the NF4 loader
+keeps the model within the 6 GB GPU budget alongside the audio stack.
+
+### Firefox browser tools
+
+Run `bash install_foxmcp.sh` once, install and enable the FoxMCP Firefox
+extension, then start Cozy normally. FoxMCP starts during the OpenTUI loading
+screen, its tools are discovered before the assistant becomes ready, and every
+browser operation is included in the final task summary.
 
 ## venv auto-detection
 

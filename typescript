@@ -1,4 +1,0 @@
-Script started on 2026-09-05 03:22:46+05:30 [COMMAND="bash -c 'exec bash run.sh --text'" /dev/null 2>&1 & PID=; sleep 3; kill  2>/dev/null; wait  2>/dev/null" <not executed on terminal>]
-bash: -c: line 1: unexpected EOF while looking for matching `"'
-
-Script done on 2026-09-05 03:22:46+05:30 [COMMAND_EXIT_CODE="2"]

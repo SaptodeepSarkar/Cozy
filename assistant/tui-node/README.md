@@ -18,8 +18,7 @@ The loading view shows the canonical SVG-derived logo, one model at a time,
 elapsed seconds, and overall progress, including the input-polish model. The workspace keeps conversation output
 stable across later wake events and provides a native focused input control.
 
-Runtime diagnostics: a muted input now shows “Microphone muted” and typed requests
-remain usable. Audio-stream failures surface as errors. `cozy --text --no-tts`
-starts the same UI with only the language model; no wake/STT or audio capture is
+Runtime diagnostics: a muted input now shows “Microphone muted”. Audio-stream failures
+surface as errors. `cozy --no-tts` starts the same UI without spoken replies;
 loaded. In voice mode the wake detector keeps a rolling two-second window,
 scores every 160 ms, and confirms marginal activations across two scores.

@@ -107,6 +107,7 @@ class HarnessConfig:
     use_llm: bool = True
     use_cleanup: bool = False
     use_vision: bool = False
+    use_foxmcp: bool = True
     use_wake: bool = True
 
     # Lazy load
@@ -588,6 +589,7 @@ class FastHarness:
         self.trace = Trace(self.cfg)
         self.tools = ToolSchemaCache(self.cfg)
         self.plugins: dict[str, Plugin] = {}
+        self.mcp_tools: list[dict] = []
         self.system = ("You are Cozy, a voice assistant running fully "
                        "offline on the user laptop. Respond fast and short. "
                        "When the user wants an action, call exactly one "
@@ -616,6 +618,9 @@ class FastHarness:
         if self.cfg.use_vision:
             from .plugins.vision import VisionPlugin
             self.plugins["vision"] = VisionPlugin(self.cfg)
+        if self.cfg.use_foxmcp:
+            from .plugins.foxmcp import FoxMCPPlugin
+            self.plugins["foxmcp"] = FoxMCPPlugin(self.cfg)
 
     def get(self, name: str) -> Plugin | None:
         return self.plugins.get(name)

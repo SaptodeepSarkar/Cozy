@@ -4,7 +4,6 @@
 #
 # Usage:
 #   cozy                 # full voice loop (default)
-#   cozy --text          # type commands instead of speaking
 #   cozy --calibrate     # 30s wake score log
 #   cozy --no-wake       # voice loop without wake gate
 #   cozy --no-tts        # log replies but don't speak
@@ -26,8 +25,11 @@ case "$(basename "$0")" in
   cozystatus) set -- --status ;;
 esac
 
+LLM_BASE="${COZY_LLM_BASE:-$ROOT/assistant/model/cozy-llm-v1}"
+LLM_ADAPTER="${COZY_LLM_ADAPTER:-$ROOT/assistant/model/cozy-llm-v1-adapter}"
+
 case "${1:-}" in
-  "" | --tui | --text | --no-wake | --no-tts | --threshold)
+  "" | --tui | --no-wake | --no-tts | --threshold)
     # Launch the OpenTUI interface by default.
     if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
       echo "Node.js 26.4+ and npm are required for the Cozy OpenTUI interface." >&2
@@ -43,7 +45,7 @@ case "${1:-}" in
     fi
     if [[ ! -t 1 ]]; then
       echo "Cozy needs an interactive terminal (stdout is not a TTY)." >&2
-      echo "Run it directly in a terminal, e.g.:  bash cozy --text" >&2
+      echo "Run it directly in a terminal, e.g.:  bash cozy" >&2
       exit 1
     fi
     if [ ! -d "$ROOT/assistant/tui-node/node_modules/@opentui/core" ]; then
@@ -66,8 +68,8 @@ case "${1:-}" in
       "$ROOT/wakeword/output/hey_cozy/hey_cozy.onnx" \
       "$STT_CT2" \
       "$STT_HF" \
-      "$ROOT/assistant/model/cozy-llm-v1/model.safetensors" \
-      "$ROOT/assistant/model/cozy-llm-v1-adapter/adapter_model.safetensors"; do
+      "$LLM_BASE" \
+      "$LLM_ADAPTER/adapter_model.safetensors"; do
       if [[ -e "$p" ]]; then
         sz=$(du -h "$p" | cut -f1)
         printf "  OK   %-72s (%s)\n" "$p" "$sz"
@@ -100,7 +102,7 @@ MISSING=0
 for p in \
   "$ROOT/assistant/.venv/bin/python" \
   "$ROOT/wakeword/output/hey_cozy/hey_cozy.onnx" \
-  "$ROOT/assistant/model/cozy-llm-v1"; do
+  "$LLM_BASE"; do
   if [[ ! -e "$p" ]]; then
     echo "Missing: $p" >&2
     MISSING=1
@@ -110,7 +112,7 @@ done
 for p in \
   "$ROOT/stt-finetune/output/cozy_stt_v1_ct2_int8" \
   "$ROOT/stt-finetune/output/hf_finetuned" \
-  "$ROOT/assistant/model/cozy-llm-v1-adapter"; do
+  "$LLM_ADAPTER"; do
   if [[ ! -e "$p" ]]; then
     echo "Note (optional, lazy-loaded): $p" >&2
   fi

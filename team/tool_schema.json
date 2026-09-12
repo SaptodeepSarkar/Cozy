@@ -91,6 +91,14 @@
       }
     },
     {
+      "name": "browser.mcp",
+      "params": {
+        "name": "string - exact FoxMCP browser tool name",
+        "arguments": "object - arguments matching that tool's schema"
+      },
+      "desc": "Call a discovered FoxMCP Firefox tool. Use for navigation, tabs, page content, clicks, typing, downloads, uploads, bookmarks, and browser workflows."
+    },
+    {
       "name": "time.now",
       "params": {},
       "desc": "Speak current time/date"

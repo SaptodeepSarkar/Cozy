@@ -17,4 +17,4 @@ bash train_dpo.sh
 echo "=== Step 4: Smoke test ==="
 assistant/.venv/bin/python assistant/smoke_test.py assistant/model/cozy-llm-v1
 echo
-echo "=== Done. Run:  bash run.sh --text  ==="
+echo "=== Done. Run:  bash run.sh  ==="

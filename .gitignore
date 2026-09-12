@@ -41,6 +41,7 @@ assistant/data/hf_glaive/
 
 # Local override with real API keys
 .mcp.json.local
+.cozy/
 
 # cozy-vision deleted in v1.52 (whole folder removed).
 # Versióned model snapshots (regenerable via setup.sh + training scripts).

@@ -24,11 +24,11 @@ export interface CozyState {
 
 export const initialState: CozyState = {
   phase: "starting",
-  models: { wake: "pending", stt: "pending", llm: "pending", cleanup: "pending", tts: "pending" },
+  models: { wake: "pending", stt: "pending", llm: "pending", foxmcp: "pending", cleanup: "pending", tts: "pending" },
   events: [],
   audioLevel: 0,
   audioHistory: [],
-  voiceEnabled: !process.argv.includes("--text"),
+  voiceEnabled: true,
   micMuted: null,
   transcript: "",
   response: "",

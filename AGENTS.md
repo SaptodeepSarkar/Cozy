@@ -33,7 +33,6 @@ Cozy/
 ```bash
 # from repo root
 bash setup.sh                              # one-time environment setup
-bash run.sh --text                         # smoke test (no mic needed)
 bash run.sh --calibrate                    # test wake word via mic
 cd wakeword && source .venv/bin/activate
 uv run livekit-wakeword eval configs/hey_cozy_test.yaml -m output/hey_cozy/hey_cozy.onnx
@@ -96,7 +95,6 @@ Then:
 
 ```bash
 cozy                  # full voice loop (wake + STT + LLM + executor + TTS)
-cozy --text           # type commands
 cozy --calibrate      # 30s wake score log
 cozy --no-wake        # skip wake gate
 cozy --no-tts         # log replies, no audio

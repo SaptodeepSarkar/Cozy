@@ -15,8 +15,6 @@ unset -f _cozy_resolve_root
 
 # Main alias.
 #   cozy              -> ambient TUI + voice listening (the default; what you want)
-#   cozy --text       -> text REPL with / commands (no audio)
-#   cozy --harness-only -> rule-router only, no LLM
 #   cozy --calibrate  -> 30s wake-word scoring log
 #   cozy --status     -> which models are on disk
 #   cozy --stop       -> kill a running cozy
@@ -27,20 +25,19 @@ cozy() {
 # Convenience aliases
 alias cozystop='bash "$COZY_ROOT/cozy" --stop'
 alias cozystatus='bash "$COZY_ROOT/cozy" --status'
-alias cozytext='bash "$COZY_ROOT/cozy" --text'
 alias cozycalibrate='bash "$COZY_ROOT/cozy" --calibrate'
 
 # Tab completion (bash + zsh)
 if [ -n "$BASH_VERSION" ]; then
     _cozy_complete() {
         local cur="${COMP_WORDS[COMP_CWORD]}"
-        COMPREPLY=($(compgen -W "--text --calibrate --no-wake --no-tts --threshold --status --stop --help" -- "$cur"))
+        COMPREPLY=($(compgen -W "--calibrate --no-wake --no-tts --threshold --status --stop --help" -- "$cur"))
     }
     complete -F _cozy_complete cozy
 elif [ -n "$ZSH_VERSION" ]; then
     # compdef only exists after compinit has been called; guard it.
     if type compdef >/dev/null 2>&1; then
-        compdef '_arguments "--text[Type commands]" --calibrate --no-wake --no-tts --threshold: --status --stop --help' cozy 2>/dev/null
+        compdef '_arguments --calibrate --no-wake --no-tts --threshold: --status --stop --help' cozy 2>/dev/null
     fi
 fi
 

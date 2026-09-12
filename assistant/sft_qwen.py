@@ -50,8 +50,10 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=max(1, min(4, os.cpu_count() or 1)))
     parser.add_argument("--resume", action="store_true", help="resume the latest SFT checkpoint")
     parser.add_argument("--no-grad-checkpoint", action="store_true")
-    parser.add_argument("--qlora", action="store_true", help="4-bit quantized base (for 1.7B+ on 6GB)")
+    parser.add_argument("--qlora", action="store_true", help="4-bit quantized base (for 7B-class models on 6GB)")
     parser.add_argument("--lora-r", type=int, default=16)
+    parser.add_argument("--adapter-only", action="store_true",
+                        help="save the PEFT adapter and skip the fp16 merge/export")
     args = parser.parse_args()
     if not torch.cuda.is_available():
         parser.error("CUDA is required for LLM SFT; run train.sh preflight for details")
@@ -90,6 +92,7 @@ def main() -> None:
             bnb_4bit_quant_type="nf4",
         )
         model_kwargs["quantization_config"] = bnb
+        model_kwargs["device_map"] = {"": 0}
     model = AutoModelForCausalLM.from_pretrained(args.base, **model_kwargs)
     lora = LoraConfig(
         r=args.lora_r,
@@ -158,6 +161,18 @@ def main() -> None:
     trainer.model.save_pretrained(str(adapter_dir))
     tok.save_pretrained(str(adapter_dir))
     print("saved adapter ->", adapter_dir)
+
+    if args.adapter_only:
+        metrics = {**train_result.metrics, **eval_metrics,
+                   "wall_time_s": round(time.time() - started, 2),
+                   "peak_gpu_memory_mb": round(torch.cuda.max_memory_allocated() / 1024**2, 1),
+                   "effective_batch_size": args.batch_size * args.grad_accum,
+                   "dtype": str(dtype).removeprefix("torch."),
+                   "adapter_only": True}
+        adapter_dir.joinpath("training_metrics.json").write_text(
+            json.dumps(metrics, indent=2, default=str) + "\n")
+        print("adapter-only mode: skipped full-model merge/export")
+        return
 
     merged = trainer.model.merge_and_unload()
     output_dir = Path(args.out)

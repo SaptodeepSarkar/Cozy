@@ -1,4 +1,4 @@
-export type ModelName = "wake" | "stt" | "llm" | "cleanup" | "tts";
+export type ModelName = "wake" | "stt" | "llm" | "foxmcp" | "cleanup" | "tts";
 export type ModelState = "pending" | "loading" | "done" | "failed";
 
 export type EngineEvent = {

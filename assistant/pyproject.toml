@@ -33,6 +33,7 @@ dependencies = [
     "huggingface-hub>=0.34,<1",
     "safetensors>=0.4",
     "tokenizers>=0.15",
+    "bitsandbytes>=0.45; sys_platform == 'linux'",
     # Utilities
     "pyyaml>=6.0",
 ]

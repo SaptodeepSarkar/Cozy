@@ -670,6 +670,7 @@ HANDLERS = {
     "settings.open": settings_open,
     "browser.search": browser_search,
     "browser.open_url": browser_open_url,
+    "browser.mcp": lambda p: _foxmcp_call(p),
     "time.now": time_now,
     # v2 additions
     "timer.set": timer_set,
@@ -689,6 +690,18 @@ HANDLERS = {
     "app.list_running": app_list_running,
     "app.switch": app_switch,
 }
+
+
+def _foxmcp_call(params):
+    name = str(params.get("name", "")).strip()
+    arguments = params.get("arguments") or {}
+    if not name or not isinstance(arguments, dict):
+        return False, "browser.mcp requires a tool name and object arguments"
+    try:
+        from foxmcp import call
+        return True, call(name, arguments)
+    except Exception as exc:
+        return False, "FoxMCP error: " + str(exc)
 
 
 from system_tools import HANDLERS as SYSTEM_HANDLERS

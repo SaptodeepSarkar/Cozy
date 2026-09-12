@@ -56,7 +56,7 @@ Superseded orange explorations (do not follow):
 
 ## Code status
 
-`assistant/tui_textual.py` + `assistant/tui-node` already match this
+`assistant/tui-node` is the only supported Cozy UI and matches this
 direction (ink terminal, mono pills, `> _` input). No code change needed
 for this shift; this doc locks the direction so future TUI work stays
 terminal-native.

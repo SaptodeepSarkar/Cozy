@@ -1,8 +1,9 @@
-"""LLM plugin: Qwen3-0.6B + DPO adapter, loaded on first use.
+"""LLM plugin: local Cozy model plus an optional PEFT adapter.
 
 Memory budget:
   - cozy-llm-v1 base: 1.2 GB VRAM (bf16)
-  - cozy-llm-v1-dpo: 40 MB + small merge overhead
+The model and adapter can be selected with COZY_LLM_BASE, COZY_LLM_ADAPTER,
+and COZY_LLM_4BIT=1. The default remains the checked-in 0.6B snapshot.
 """
 from __future__ import annotations
 
@@ -36,13 +37,17 @@ class LLMPlugin(Plugin):
         self._model = None
         self._tok = None
         self._device = "cuda"
-        self._model_dir = ASSISTANT / "model" / "cozy-llm-v1"
+        self._model_dir = Path(os.environ.get(
+            "COZY_LLM_BASE", str(ASSISTANT / "model" / "cozy-llm-v1")))
+        adapter_env = os.environ.get("COZY_LLM_ADAPTER")
+        self._adapter_dir = Path(adapter_env) if adapter_env else None
         self._dpo_dir = ASSISTANT / "model" / "cozy-llm-v1-dpo"
         self._use_dpo = (self._dpo_dir / "adapter_model.safetensors").exists()
+        self._use_4bit = os.environ.get("COZY_LLM_4BIT", "0") == "1"
         self._tool_schema = None
 
     def _do_load(self):
-        if not (self._model_dir / "model.safetensors").exists():
+        if self._model_dir.exists() and not any(self._model_dir.glob("*.safetensors")):
             raise FileNotFoundError(
                 f"LLM weights missing: {self._model_dir}/model.safetensors. "
                 f"Run assistant/sft_qwen.py first."
@@ -63,14 +68,32 @@ class LLMPlugin(Plugin):
                 except (OSError, ValueError, TypeError):
                     pass
             self._tok = AutoTokenizer.from_pretrained(str(self._model_dir), extra_special_tokens=extra)
-            base = AutoModelForCausalLM.from_pretrained(
-                str(self._model_dir), torch_dtype=torch.bfloat16 if self._device == "cuda" else torch.float32,
+            model_kwargs = dict(
+                torch_dtype=torch.bfloat16 if self._device == "cuda" else torch.float32,
                 attn_implementation="sdpa")
-            if self._use_dpo:
+            if self._use_4bit:
+                if self._device != "cuda":
+                    raise RuntimeError("COZY_LLM_4BIT=1 requires CUDA")
+                from transformers import BitsAndBytesConfig
+                model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_compute_dtype=torch.float16)
+                model_kwargs["device_map"] = {"": 0}
+            base = AutoModelForCausalLM.from_pretrained(str(self._model_dir), **model_kwargs)
+            adapter = self._adapter_dir
+            if adapter is None and self._use_dpo:
+                adapter = self._dpo_dir
+            if adapter is not None:
+                if not (adapter / "adapter_model.safetensors").exists():
+                    raise FileNotFoundError(f"LLM adapter weights missing: {adapter}")
                 from peft import PeftModel
-                base = PeftModel.from_pretrained(base, str(self._dpo_dir))
-                base = base.merge_and_unload()
-        self._model = base.to(self._device).eval()
+                base = PeftModel.from_pretrained(base, str(adapter))
+                # Do not merge an NF4 model: merging materializes fp16 weights.
+                if not self._use_4bit:
+                    base = base.merge_and_unload()
+        self._model = base if self._use_4bit else base.to(self._device)
+        self._model = self._model.eval()
         self._torch = torch
         _emit("warmup", model="llm", state="done")
 
