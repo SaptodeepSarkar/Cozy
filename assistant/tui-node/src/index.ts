@@ -12,7 +12,10 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { createWriteStream, type WriteStream } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEngineEvent, textField, type EngineEvent, type ModelName } from "./protocol.ts";
 import { barsForLevels, formatElapsed, initialState, reduceEvent, type CozyState } from "./state.ts";
@@ -28,6 +31,7 @@ class EngineSupervisor {
   private stopping = false;
   private killTimer?: NodeJS.Timeout;
   private stderrTail: string[] = [];
+  private stderrLog?: WriteStream;
 
   subscribe(listener: (event: EngineEvent) => void) { this.listeners.add(listener); }
   private emit(event: EngineEvent) { for (const listener of this.listeners) listener(event); }
@@ -35,6 +39,17 @@ class EngineSupervisor {
   start() {
     this.stopping = false;
     this.emit({ kind: "backend_start", ts: Date.now() / 1000 });
+    // Persist full engine stderr: the on-screen box only fits a few lines,
+    // and native crashes (MKL/CUDA/dlopen) print their cause there.
+    try {
+      const dir = join(homedir(), ".cache", "cozy");
+      mkdirSync(dir, { recursive: true });
+      this.stderrLog?.end();
+      this.stderrLog = createWriteStream(join(dir, "engine-stderr.log"), { flags: "w" });
+      this.stderrLog.write(`--- cozy engine started ${new Date().toISOString()} ---\n`);
+    } catch {
+      this.stderrLog = undefined;
+    }
     const forwarded = process.argv.slice(2).filter(arg => arg !== "--tui" && arg !== "--json-events");
     this.child = spawn(python, [runtime, "--json-events", ...forwarded], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -52,6 +67,7 @@ class EngineSupervisor {
       }
     });
     this.child.stderr.on("data", chunk => {
+      this.stderrLog?.write(chunk);
       stderrBuffer += chunk.toString();
       const lines = stderrBuffer.split("\n");
       stderrBuffer = lines.pop() || "";
@@ -87,6 +103,8 @@ class EngineSupervisor {
   stop(immediate = false) {
     if (this.stopping) return;
     this.stopping = true;
+    this.stderrLog?.end();
+    this.stderrLog = undefined;
     const child = this.child;
     if (!child) return;
     child.stdin.end();
@@ -165,7 +183,7 @@ const loadRows: TextRenderable[] = MODEL_NAMES.map(() => {
   loadCol.add(el);
   return el;
 });
-const startupError = new TextRenderable(renderer, { content: "", fg: colors.red, width: 76, height: 2, wrapMode: "word" });
+const startupError = new TextRenderable(renderer, { content: "", fg: colors.red, width: 76, height: 4, wrapMode: "word" });
 loadCol.add(startupError);
 const TIPS = [
   'tip: say "hey cozy", then speak naturally',
