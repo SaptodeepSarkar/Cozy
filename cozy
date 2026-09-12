@@ -33,11 +33,17 @@ case "${1:-}" in
       echo "Node.js 26.4+ and npm are required for the Cozy OpenTUI interface." >&2
       exit 1
     fi
-    NODE_VERSION="$(node -p 'process.versions.node.split(".").map(Number)' 2>/dev/null || true)"
-    NODE_MAJOR="${NODE_VERSION%%,*}"
-    NODE_MINOR="${NODE_VERSION#*,}"; NODE_MINOR="${NODE_MINOR%%,*}"
-    if [[ -z "$NODE_MAJOR" ]] || (( NODE_MAJOR < 26 || (NODE_MAJOR == 26 && NODE_MINOR < 4) )); then
+    NODE_VERSION="$(node -p 'process.versions.node' 2>/dev/null || echo "")"
+    NODE_MAJOR="${NODE_VERSION%%.*}"
+    NODE_REST="${NODE_VERSION#*.}"
+    NODE_MINOR="${NODE_REST%%.*}"
+    if ! [[ "$NODE_MAJOR" =~ ^[0-9]+$ && "$NODE_MINOR" =~ ^[0-9]+$ ]] || (( NODE_MAJOR < 26 || (NODE_MAJOR == 26 && NODE_MINOR < 4) )); then
       echo "Cozy OpenTUI needs Node.js 26.4 or newer (found $(node --version))." >&2
+      exit 1
+    fi
+    if [[ ! -t 1 ]]; then
+      echo "Cozy needs an interactive terminal (stdout is not a TTY)." >&2
+      echo "Run it directly in a terminal, e.g.:  bash cozy --text" >&2
       exit 1
     fi
     if [ ! -d "$ROOT/assistant/tui-node/node_modules/@opentui/core" ]; then
