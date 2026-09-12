@@ -9,6 +9,7 @@ class DecisionRecoveryTests(unittest.TestCase):
         harness = FastHarness.__new__(FastHarness)
         harness.system = 'You are Cozy.'
         harness.trace = Mock()
+        harness.trace.recent = []
         harness.trace.build_prompt.return_value = ([{'role': 'user', 'content': 'time?'}], 10)
         harness.tools = Mock()
         llm = Mock()

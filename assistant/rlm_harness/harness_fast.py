@@ -145,6 +145,7 @@ class Turn:
     content: str = ""
     tool_calls: list[dict] = field(default_factory=list)
     name: str = ""            # for tool role
+    tool_call_id: str = ""    # OpenAI-compatible tool result correlation
     ts: float = field(default_factory=time.time)
     tokens: int = 0           # how many tokens this turn used
     producer: str = "user"    # who made this turn: user|human|model|tool
@@ -162,6 +163,7 @@ class Turn:
             role=d["role"], content=d.get("content", ""),
             tool_calls=d.get("tool_calls", []) or [],
             name=d.get("name", ""), ts=d.get("ts", 0.0),
+            tool_call_id=d.get("tool_call_id", ""),
             tokens=d.get("tokens", 0), producer=d.get("producer", "user"),
         )
 
@@ -332,6 +334,8 @@ class Trace:
                 d["tool_calls"] = t.tool_calls
             if t.name and t.role == "tool":
                 d["name"] = t.name
+                if t.tool_call_id:
+                    d["tool_call_id"] = t.tool_call_id
             recent_msgs.append(d)
         # Keep newest turns within the configured budget. The static tool
         # schema may itself be large, so reserve a small conversation floor
@@ -670,7 +674,7 @@ class FastHarness:
             if name:
                 self.trace.append(Turn(
                     role="assistant", content="",
-                    tool_calls=[{"type": "function", "function": {
+                    tool_calls=[{"id": f"call_{int(time.time() * 1000000)}", "type": "function", "function": {
                         "name": name,
                         "arguments": json.dumps(args, ensure_ascii=False),
                     }}], producer="rule"))
@@ -718,7 +722,7 @@ class FastHarness:
             if name:
                 self.trace.append(Turn(
                     role="assistant", content="",
-                    tool_calls=[{"type": "function",
+                    tool_calls=[{"id": f"call_{int(time.time() * 1000000)}", "type": "function",
                                  "function": {"name": name,
                                               "arguments": json.dumps(args, ensure_ascii=False)}}],
                     producer="model"))
@@ -743,8 +747,13 @@ class FastHarness:
         This is deliberately separate from ``decide``: it must not append a
         second user turn or run the shortcut intent router between steps.
         """
+        call_id = ""
+        for turn in reversed(self.trace.recent):
+            if turn.role == "assistant" and turn.tool_calls:
+                call_id = str(turn.tool_calls[-1].get("id", ""))
+                break
         self.trace.append(Turn(role="tool", name=tool_name, content=output,
-                               producer="tool"))
+                               tool_call_id=call_id, producer="tool"))
         self.trace._sync_from_disk()
         messages, _ = self.trace.build_prompt(self.system, self.tools.repr)
         llm = self.plugins.get("llm")
@@ -765,7 +774,7 @@ class FastHarness:
         if name:
             self.trace.append(Turn(
                 role="assistant", content="",
-                tool_calls=[{"type": "function", "function": {
+                tool_calls=[{"id": f"call_{int(time.time() * 1000000)}", "type": "function", "function": {
                     "name": name, "arguments": json.dumps(args, ensure_ascii=False),
                 }}], producer="model"))
         else:
@@ -780,6 +789,16 @@ class FastHarness:
     @staticmethod
     def _rule_tool_call(user_text: str) -> tuple[str, dict]:
         """Translate only unambiguous legacy intent rules to real tools."""
+        lower = user_text.lower()
+        if re.search(r"(?:project|repo|repository)\s+folder|file\s*system|filesystem|source\s+code|find\s+.*\bfiles?\b", lower):
+            project = str(ASSISTANT.parent)
+            command = (
+                "printf '%s\\n' 'PROJECT PATHS'; "
+                "find . -maxdepth 5 \\( -iname '*archflow*' -o -iname '*bug*' \\) -print 2>/dev/null; "
+                "printf '%s\\n' 'BUG MARKERS'; "
+                "rg -n -i --glob '!*.lock' --glob '!*.jsonl' '(TODO|FIXME|BUG|XXX|except Exception)' . 2>/dev/null | head -200"
+            )
+            return "terminal.run", {"command": command, "cwd": project, "timeout": 45}
         from intents import route
         decision = route(user_text)
         tool = decision.get("tool")
