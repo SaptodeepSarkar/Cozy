@@ -189,7 +189,9 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
             _flush_emit()
         except Exception as exc:
             load_failures.append(name)
-            if name in {"llm", "stt", "tts", "foxmcp"} or (name == "wake" and voice and not no_wake):
+            # Browser control is an optional capability. A missing Firefox
+            # bridge must not strand the voice UI on its loading screen.
+            if name in {"llm", "stt", "tts"} or (name == "wake" and voice and not no_wake):
                 critical_failures.append(name)
             json_emit("warmup", model=name, state="failed", index=index,
                       total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2))

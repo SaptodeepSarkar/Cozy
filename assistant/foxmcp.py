@@ -4,7 +4,9 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -18,6 +20,7 @@ class FoxMCPClient:
         self.ws_port = os.environ.get("COZY_FOXMCP_WS_PORT", "8765")
         self.mcp_port = os.environ.get("COZY_FOXMCP_MCP_PORT", "3000")
         self.process: subprocess.Popen | None = None
+        self.log_file = None
         self.session_id = ""
         self.tools: list[dict] = []
 
@@ -31,8 +34,18 @@ class FoxMCPClient:
                        "--mcp-port", self.mcp_port]
             if not Path(command[0]).exists() or not Path(command[1]).exists():
                 raise FileNotFoundError(f"FoxMCP installation is incomplete: {self.root}")
+            log_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "cozy"
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+                log_path = log_dir / "foxmcp.log"
+                self.log_file = log_path.open("w", encoding="utf-8")
+            except OSError:
+                log_dir = Path(tempfile.gettempdir()) / "cozy"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                self.log_file = (log_dir / "foxmcp.log").open("w", encoding="utf-8")
             self.process = subprocess.Popen(command, cwd=self.root,
-                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                            stdout=self.log_file, stderr=subprocess.STDOUT,
+                                            text=True)
             self._wait_for_server()
         self._initialize()
         result = self._request("tools/list", {})
@@ -42,12 +55,31 @@ class FoxMCPClient:
     def _wait_for_server(self) -> None:
         deadline = time.time() + float(os.environ.get("COZY_FOXMCP_START_TIMEOUT", "15"))
         while time.time() < deadline:
+            if self.process is not None and self.process.poll() is not None:
+                details = ""
+                log_path = Path(self.log_file.name) if self.log_file else None
+                if log_path and log_path.exists():
+                    details = log_path.read_text(encoding="utf-8", errors="replace")[-1200:].strip()
+                raise RuntimeError(
+                    f"FoxMCP exited with code {self.process.returncode}"
+                    + (f": {details}" if details else ""))
             try:
                 with urllib.request.urlopen(self.base_url, timeout=1):
                     return
-            except Exception:
+            except urllib.error.HTTPError as exc:
+                # FastMCP commonly answers a GET with 404/405 while its POST
+                # JSON-RPC endpoint is already ready.
+                if exc.code in {404, 405, 406, 426}:
+                    return
                 time.sleep(0.25)
-        raise TimeoutError(f"FoxMCP did not start at {self.base_url}")
+            except (urllib.error.URLError, TimeoutError, OSError):
+                time.sleep(0.25)
+        log_path = Path(self.log_file.name) if self.log_file else None
+        details = ""
+        if log_path and log_path.exists():
+            details = log_path.read_text(encoding="utf-8", errors="replace")[-1200:].strip()
+        raise TimeoutError(f"FoxMCP did not start at {self.base_url}"
+                           + (f": {details}" if details else ""))
 
     def _post(self, payload: dict) -> dict:
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
@@ -90,6 +122,9 @@ class FoxMCPClient:
             except subprocess.TimeoutExpired:
                 self.process.kill()
         self.process = None
+        if self.log_file is not None:
+            self.log_file.close()
+            self.log_file = None
 
 
 _client: FoxMCPClient | None = None
