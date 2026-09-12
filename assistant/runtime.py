@@ -1017,7 +1017,7 @@ def main() -> None:
     if args.json_events:
         from rlm_harness.harness_fast import FastHarness, HarnessConfig
         from executor import execute as executor_execute
-        cfg = HarnessConfig()
+        cfg = HarnessConfig.from_env()
         cfg.use_wake = not args.no_wake
         cfg.use_stt = True
         cfg.use_llm = True
@@ -1079,7 +1079,7 @@ def main() -> None:
 
     from rlm_harness.harness_fast import FastHarness, HarnessConfig
     from executor import execute as executor_execute
-    cfg = HarnessConfig()
+    cfg = HarnessConfig.from_env()
     cfg.use_wake = not args.no_wake
     cfg.use_stt = True
     cfg.use_llm = True

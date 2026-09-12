@@ -88,6 +88,12 @@ is never printed or committed. The normal tool schema is sent with each
 request, and returned tool calls go through the same Cozy executor and FoxMCP
 browser bridge as the local model.
 
+That model currently advertises a 262,144-token context window. Cozy uses
+that as the OpenRouter context budget by default (`COZY_MAX_CONTEXT_TOKENS`,
+`COZY_COMPACT_THRESHOLD`, and `COZY_RECENT_TURNS` can override it). The full
+conversation and tool results remain in the parent RLM harness trace; only a
+model-selected `rlm.delegate` creates a child RLM with its own scoped trace.
+
 Set `COZY_OPENROUTER_MODEL` to change the temporary remote model. Remove the
 key or unset it to return to the local LoRA-backed model.
 

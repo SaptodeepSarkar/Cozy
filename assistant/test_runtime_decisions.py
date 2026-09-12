@@ -1,4 +1,5 @@
 import unittest
+import os
 from unittest.mock import Mock, patch
 from rlm_harness.harness_fast import FastHarness
 
@@ -53,3 +54,10 @@ class DecisionRecoveryTests(unittest.TestCase):
             ('browser.search', {'query': 'cozy'}),
         )
         self.assertTrue(h.plugins['llm'].load.called)
+
+    def test_openrouter_uses_the_advertised_full_context_budget(self):
+        from rlm_harness.harness_fast import HarnessConfig
+        with patch.dict(os.environ, {'OPENROUTER_API': 'test-key'}, clear=False):
+            cfg = HarnessConfig.from_env()
+        self.assertEqual(cfg.max_context_tokens, 262144)
+        self.assertEqual(cfg.recent_turns, 96)

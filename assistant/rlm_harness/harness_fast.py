@@ -121,6 +121,13 @@ class HarnessConfig:
     @classmethod
     def from_env(cls) -> "HarnessConfig":
         c = cls()
+        # Ling 3 Flash VL advertises a 262,144-token window on OpenRouter.
+        # Keep the full remote budget available while retaining conservative
+        # local defaults for the laptop model.
+        if os.environ.get("OPENROUTER_API") or os.environ.get("OPENROUTER_API_KEY"):
+            c.max_context_tokens = 262144
+            c.compact_threshold = 220000
+            c.recent_turns = 96
         for k in ("max_context_tokens", "compact_threshold", "compact_window",
                   "recent_turns", "idle_unload_s"):
             v = os.environ.get(f"COZY_{k.upper()}")
