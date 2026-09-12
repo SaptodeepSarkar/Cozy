@@ -156,9 +156,11 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         json_emit("error", msg=f"wake model missing: {WW_PATH}")
         return
 
-    # Load in a deterministic order. Loading Torch, CTranslate2, ONNX and
-    # Kokoro concurrently caused CPU/GPU/RAM contention and intermittent TTS
-    # initialization failures on the 6 GB target machine.
+    # Start every subsystem together. OpenTUI stays on the loading screen
+    # until all futures finish, and each warmup event carries its own timing.
+    # This keeps startup behavior consistent instead of making later plugins
+    # look broken simply because an earlier model took a long time.
+    from concurrent.futures import ThreadPoolExecutor
     load_failures = []
     critical_failures = []
     enabled = [name for name in ("wake", "stt", "llm", "foxmcp", "mcp", "cleanup", "tts")
@@ -166,42 +168,48 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                and not (name == "tts" and not tts_enabled)
                and not (name == "wake" and (not voice or no_wake))
                and not (name == "stt" and not voice)]
-    for index, name in enumerate(enabled, start=1):
-        p_obj = harness.plugins.get(name)
-        started = _time.monotonic()
-        json_emit("warmup", model=name, state="loading", index=index,
-                  total=len(enabled), progress=(index - 1) / max(1, len(enabled)))
+    positions = {name: index for index, name in enumerate(enabled, start=1)}
+    started = {name: _time.monotonic() for name in enabled}
+    for name in enabled:
+        json_emit("warmup", model=name, state="loading", index=positions[name],
+                  total=len(enabled), progress=(positions[name] - 1) / max(1, len(enabled)))
         _flush_emit()
-        try:
-            p_obj.load()
-            if name in {"foxmcp", "mcp"}:
-                tools = getattr(p_obj, "tools", [])
-                harness.mcp_tools = list(getattr(harness, "mcp_tools", [])) + tools
-                names = ", ".join(
-                    str(t.get("name")) + (": " + str(t.get("description", ""))[:120]
-                                           if t.get("description") else "")
-                    for t in tools if t.get("name"))
-                if names:
-                    harness.system += (
-                        "\nMCP tools discovered at startup: " + names +
-                        ". Use the matching MCP tool wrapper with exact arguments."
-                    )
-            json_emit("warmup", model=name, state="done", index=index,
-                      total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2),
-                      progress=index / max(1, len(enabled)))
+
+    def load_one(name):
+        harness.plugins[name].load()
+        return name
+
+    with ThreadPoolExecutor(max_workers=max(1, len(enabled)),
+                            thread_name_prefix="cozy-startup") as pool:
+        futures = {pool.submit(load_one, name): name for name in enabled}
+        for future, name in ((future, futures[future]) for future in futures):
+            try:
+                future.result()
+                p_obj = harness.plugins.get(name)
+                if name in {"foxmcp", "mcp"}:
+                    tools = getattr(p_obj, "tools", [])
+                    harness.mcp_tools = list(getattr(harness, "mcp_tools", [])) + tools
+                    names = ", ".join(
+                        str(t.get("name")) + (": " + str(t.get("description", ""))[:120]
+                                               if t.get("description") else "")
+                        for t in tools if t.get("name"))
+                    if names:
+                        harness.system += (
+                            "\nMCP tools discovered at startup: " + names +
+                            ". Use the matching MCP tool wrapper with exact arguments."
+                        )
+                elapsed = round(_time.monotonic() - started[name], 2)
+                json_emit("warmup", model=name, state="done", index=positions[name],
+                          total=len(enabled), elapsed_s=elapsed,
+                          progress=positions[name] / max(1, len(enabled)))
+            except Exception as exc:
+                load_failures.append(name)
+                if name in {"llm", "stt", "tts"} or (name == "wake" and voice and not no_wake):
+                    critical_failures.append(name)
+                json_emit("warmup", model=name, state="failed", index=positions[name],
+                          total=len(enabled), elapsed_s=round(_time.monotonic() - started[name], 2))
+                json_emit("error", msg=f"{name} load: {exc}")
             _flush_emit()
-        except Exception as exc:
-            load_failures.append(name)
-            # Browser control is an optional capability. A missing Firefox
-            # bridge must not strand the voice UI on its loading screen.
-            if name in {"llm", "stt", "tts"} or (name == "wake" and voice and not no_wake):
-                critical_failures.append(name)
-            json_emit("warmup", model=name, state="failed", index=index,
-                      total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2))
-            json_emit("error", msg=f"{name} load: {exc}")
-            _flush_emit()
-            if critical_failures:
-                break
     if critical_failures:
         json_emit("startup_failed", models=critical_failures,
                   msg="Model startup failed: " + ", ".join(critical_failures))

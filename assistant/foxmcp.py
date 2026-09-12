@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -74,6 +75,7 @@ class FoxMCPClient:
                 raise RuntimeError(
                     f"FoxMCP exited with code {self.process.returncode}"
                     + (f": {details}" if details else ""))
+            self._update_dynamic_mcp_port()
             if self._endpoint_is_up():
                 return
             else:
@@ -84,6 +86,17 @@ class FoxMCPClient:
             details = log_path.read_text(encoding="utf-8", errors="replace")[-1200:].strip()
         raise TimeoutError(f"FoxMCP did not start at {self.base_url}"
                            + (f": {details}" if details else ""))
+
+    def _update_dynamic_mcp_port(self) -> None:
+        if self.log_file is None or os.environ.get("COZY_FOXMCP_URL"):
+            return
+        try:
+            text = Path(self.log_file.name).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return
+        match = re.search(r"MCP server will use port (\d+)", text)
+        if match:
+            self.base_url = f"http://127.0.0.1:{match.group(1)}/mcp"
 
     def _endpoint_is_up(self) -> bool:
         try:
@@ -96,12 +109,12 @@ class FoxMCPClient:
         except (urllib.error.URLError, TimeoutError, OSError):
             return False
 
-    def _post(self, payload: dict) -> dict:
+    def _post(self, payload: dict, timeout: float = 60) -> dict:
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
         if self.session_id:
             headers["Mcp-Session-Id"] = self.session_id
         req = urllib.request.Request(self.base_url, data=json.dumps(payload).encode(), headers=headers)
-        with urllib.request.urlopen(req, timeout=60) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             sid = response.headers.get("Mcp-Session-Id")
             if sid:
                 self.session_id = sid
@@ -116,7 +129,8 @@ class FoxMCPClient:
     def _initialize(self) -> None:
         self._post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                     "params": {"protocolVersion": "2025-03-26", "capabilities": {},
-                               "clientInfo": {"name": "cozy", "version": "3.0"}}})
+                               "clientInfo": {"name": "cozy", "version": "3.0"}}},
+                   timeout=8)
         self._post({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
 
     def _request(self, method: str, params: dict) -> dict:
