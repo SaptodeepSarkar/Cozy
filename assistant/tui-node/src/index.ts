@@ -27,6 +27,7 @@ class EngineSupervisor {
   private listeners = new Set<(event: EngineEvent) => void>();
   private stopping = false;
   private killTimer?: NodeJS.Timeout;
+  private stderrTail: string[] = [];
 
   subscribe(listener: (event: EngineEvent) => void) { this.listeners.add(listener); }
   private emit(event: EngineEvent) { for (const listener of this.listeners) listener(event); }
@@ -55,6 +56,11 @@ class EngineSupervisor {
       const lines = stderrBuffer.split("\n");
       stderrBuffer = lines.pop() || "";
       for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed) {
+          this.stderrTail.push(trimmed);
+          if (this.stderrTail.length > 5) this.stderrTail.shift();
+        }
         if (/traceback|error|failed|exception/i.test(line) && !/warning/i.test(line)) {
           this.emit({ kind: "error", msg: line.trim(), ts: Date.now() / 1000 });
         }
@@ -66,7 +72,8 @@ class EngineSupervisor {
       this.killTimer = undefined;
       this.child = undefined;
       if (!this.stopping) {
-        this.emit({ kind: "backend_crash", message: `Engine exited (${signal || `code ${code ?? "unknown"}`}).`, ts: Date.now() / 1000 });
+        const tail = this.stderrTail.length ? ` ${this.stderrTail.join(" | ")}` : "";
+        this.emit({ kind: "backend_crash", message: `Engine exited (${signal || `code ${code ?? "unknown"}`}).${tail}`, ts: Date.now() / 1000 });
       }
     });
   }
