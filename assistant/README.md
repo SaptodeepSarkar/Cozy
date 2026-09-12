@@ -91,6 +91,15 @@ browser bridge as the local model.
 Set `COZY_OPENROUTER_MODEL` to change the temporary remote model. Remove the
 key or unset it to return to the local LoRA-backed model.
 
+### Terminal safety boundary
+
+`terminal.run` runs through Bubblewrap. It can read system files, but its only
+writable mounts are the owner's home directory and `/tmp`; `/etc`, `/usr`,
+and the rest of the system are read-only. `sudo`, `doas`, `pkexec`, and `su`
+are refused inside that sandbox. For an action that genuinely needs elevation,
+`terminal.elevate` opens a separate interactive terminal and the owner enters
+the password there. Cozy never receives, stores, or sends a password.
+
 ### Firefox browser tools
 
 Run `bash install_foxmcp.sh` once, install and enable the FoxMCP Firefox

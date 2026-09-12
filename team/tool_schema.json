@@ -219,6 +219,23 @@
       "desc": "Switch focus to an already-open app"
     },
     {
+      "name": "terminal.run",
+      "params": {
+        "command": "string - shell command to run",
+        "cwd": "string optional - working directory, defaults to home",
+        "timeout": "int optional - seconds, maximum 90"
+      },
+      "desc": "Run a terminal command in a sandbox. It can read the system, but can write only inside the user's home directory or /tmp. It cannot use sudo. Read the result and continue the task when another step is needed."
+    },
+    {
+      "name": "terminal.elevate",
+      "params": {
+        "command": "string - privileged shell command to run",
+        "cwd": "string optional - working directory, defaults to home"
+      },
+      "desc": "Open a separate interactive terminal for a command that truly needs sudo. The owner must enter the password directly in that terminal; never ask for, store, or transmit a password."
+    },
+    {
       "name": "system.disk.usage",
       "params": {
         "path": "string - filesystem path, defaults to home"

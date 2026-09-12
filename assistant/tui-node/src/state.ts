@@ -20,11 +20,13 @@ export interface CozyState {
   modelElapsed: Partial<Record<ModelName, number>>;
   startupProgress: number;
   hasStarted: boolean;
+  contextUsed: number;
+  contextLimit: number;
 }
 
 export const initialState: CozyState = {
   phase: "starting",
-  models: { wake: "pending", stt: "pending", llm: "pending", foxmcp: "pending", cleanup: "pending", tts: "pending" },
+  models: { wake: "pending", stt: "pending", llm: "pending", foxmcp: "pending", mcp: "pending", cleanup: "pending", tts: "pending" },
   events: [],
   audioLevel: 0,
   audioHistory: [],
@@ -39,6 +41,8 @@ export const initialState: CozyState = {
   modelElapsed: {},
   startupProgress: 0,
   hasStarted: false,
+  contextUsed: 0,
+  contextLimit: 1800,
 };
 
 const loggedKinds = new Set([
@@ -78,6 +82,12 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
         voiceEnabled: typeof event.voice === "boolean" ? event.voice : state.voiceEnabled };
     case "audio_status":
       return { ...state, micMuted: typeof event.muted === "boolean" ? event.muted : null };
+    case "context": {
+      const used = numberField(event, "used");
+      const limit = numberField(event, "limit");
+      return { ...state, contextUsed: Number.isFinite(used) ? used : state.contextUsed,
+        contextLimit: Number.isFinite(limit) && limit > 0 ? limit : state.contextLimit };
+    }
     case "wake_score":
       return state; // Wake confidence is not microphone amplitude.
     case "wake":

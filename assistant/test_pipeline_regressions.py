@@ -37,6 +37,34 @@ class PipelineTests(unittest.TestCase):
         for name in ['system.info', 'system.disk.usage', 'system.memory.status', 'system.uptime']:
             self.assertTrue(executor.execute(name)['ok'], name)
 
+    def test_app_listing_never_falls_back_to_service_processes(self):
+        with patch.object(executor, '_which_any', return_value=None):
+            ok, output = executor.app_list_running()
+        self.assertFalse(ok)
+        self.assertIn('desktop windows', output)
+
+    def test_terminal_tool_runs_in_requested_directory(self):
+        ok, output = executor.terminal_run({'command': 'printf cozy', 'cwd': '/tmp'})
+        self.assertTrue(ok)
+        self.assertEqual(output, 'cozy')
+
+    def test_terminal_tool_can_read_system_but_cannot_write_outside_home_or_tmp(self):
+        ok, output = executor.terminal_run({'command': 'head -n 1 /etc/hosts', 'cwd': '/tmp'})
+        self.assertTrue(ok)
+        self.assertTrue(output)
+        blocked = Path('/etc/cozy_terminal_test_forbidden')
+        self.assertFalse(blocked.exists())
+        ok, output = executor.terminal_run({
+            'command': f'touch {blocked}', 'cwd': '/tmp'})
+        self.assertFalse(ok)
+        self.assertIn('Read-only file system', output)
+        self.assertFalse(blocked.exists())
+
+    def test_terminal_tool_refuses_elevation_in_the_agent_sandbox(self):
+        ok, output = executor.terminal_run({'command': 'sudo id', 'cwd': '/tmp'})
+        self.assertFalse(ok)
+        self.assertIn('terminal.elevate', output)
+
     def test_runtime_uses_room_safe_wake_threshold(self):
         self.assertAlmostEqual(runtime._default_wake_threshold(), 0.60)
         with patch.dict("os.environ", {"COZY_WAKE_THRESHOLD": "0.72"}):

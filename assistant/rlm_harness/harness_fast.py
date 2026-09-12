@@ -605,7 +605,10 @@ class FastHarness:
                        "laptop. Respond fast and short. "
                        "When the user wants an action, call exactly one "
                        "tool with compact JSON. For plain chat, answer "
-                       "briefly and warmly without tools.")
+                       "briefly and warmly without tools. After a tool "
+                       "result, inspect it: call the next tool when work "
+                       "remains, otherwise give a concise useful summary. "
+                       "Never repeat raw command output to the user.")
         self._register_default_plugins()
 
     def _register_default_plugins(self) -> None:
@@ -726,6 +729,46 @@ class FastHarness:
             except Exception:
                 pass
             return name, args
+
+    def continue_after_tool(self, tool_name: str, output: str) -> tuple[str, dict]:
+        """Give the planner a tool result and let it choose the next step.
+
+        This is deliberately separate from ``decide``: it must not append a
+        second user turn or run the shortcut intent router between steps.
+        """
+        self.trace.append(Turn(role="tool", name=tool_name, content=output,
+                               producer="tool"))
+        self.trace._sync_from_disk()
+        messages, _ = self.trace.build_prompt(self.system, self.tools.repr)
+        llm = self.plugins.get("llm")
+        if llm is None:
+            return "", {}
+        llm.load()
+        llm.touch()
+        raw = llm.generate(messages, max_new_tokens=180)
+        if raw.strip().lower() in {"", "none", "null"}:
+            raw = "Completed the requested action."
+        name, args = extract_tool_call(raw)
+        if name:
+            name = self._normalize_tool_name(name)
+        valid = {tool["name"] for tool in json.loads(
+            (ASSISTANT.parent / "team" / "tool_schema.json").read_text())["tools"]}
+        if name and name not in valid:
+            raw, name, args = "I couldn't safely map the next action to an available tool.", "", {}
+        if name:
+            self.trace.append(Turn(
+                role="assistant", content="",
+                tool_calls=[{"type": "function", "function": {
+                    "name": name, "arguments": json.dumps(args, ensure_ascii=False),
+                }}], producer="model"))
+        else:
+            raw = re.sub(r"<think>.*?(?:</think>|$)", "", raw, flags=re.S).strip()
+            self.trace.append(Turn(role="assistant", content=raw, producer="model"))
+        return name, args
+
+    def context_usage(self) -> tuple[int, int]:
+        """Approximate live context occupancy for the TUI."""
+        return self.trace._count_recent_tokens(), self.cfg.max_context_tokens
 
     @staticmethod
     def _rule_tool_call(user_text: str) -> tuple[str, dict]:

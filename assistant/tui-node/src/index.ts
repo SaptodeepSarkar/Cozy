@@ -121,8 +121,7 @@ class EngineSupervisor {
   }
 }
 
-// True Terminal v2 tokens — ink-black mono terminal. No panels, no glow,
-// no orange. See docs/cozy-ui-true-terminal.md.
+// A roomy terminal workspace: conversation first, operational context beside it.
 const colors = {
   page: "#0b0d10",
   ink: "#d0d6e0",
@@ -136,8 +135,8 @@ const colors = {
 };
 
 const CAT = "|\\__/,|\n_.|o o  |_\n-(((---(((";
-const SEP = "─".repeat(76);
-const MODEL_NAMES: ModelName[] = ["wake", "stt", "llm", "foxmcp", "cleanup", "tts"];
+const SEP = "─".repeat(200);
+const MODEL_NAMES: ModelName[] = ["wake", "stt", "llm", "foxmcp", "mcp", "cleanup", "tts"];
 
 const ink = RGBA.fromHex(colors.ink);
 const muted = RGBA.fromHex(colors.muted);
@@ -186,11 +185,10 @@ const loadRows: TextRenderable[] = MODEL_NAMES.map(() => {
 const startupError = new TextRenderable(renderer, { content: "", fg: colors.red, width: 76, height: 4, wrapMode: "word" });
 loadCol.add(startupError);
 const TIPS = [
-  'tip: say "hey cozy", then speak naturally',
-  "tip: filler words are polished out automatically",
-  "tip: fully offline — no cloud, no telemetry",
-  "tip: tune sensitivity with cozy --threshold 0.6",
-  "tip: press space to talk, esc to cancel",
+  "tip: voice transcripts are cleaned before planning",
+  "tip: browser tasks can use FoxMCP",
+  "tip: type a task and press enter",
+  "tip: context is summarized as it fills",
 ];
 const tipsEl = new TextRenderable(renderer, { content: TIPS[0], fg: colors.faint, width: 76, height: 1 });
 loadCol.add(tipsEl);
@@ -198,13 +196,17 @@ loadCol.add(new TextRenderable(renderer, { content: "ctrl+c quit", fg: colors.fa
 
 const workspace = new BoxRenderable(renderer, {
   visible: false, width: "100%", height: "100%", flexDirection: "column",
-  backgroundColor: colors.page, alignItems: "center", padding: 1,
+  backgroundColor: colors.page, padding: 1,
 });
 page.add(workspace);
-const col = new BoxRenderable(renderer, {
-  width: 76, height: "100%", flexDirection: "column", gap: 1,
+const mainRow = new BoxRenderable(renderer, {
+  width: "100%", height: "100%", flexDirection: "row", gap: 2,
 });
-workspace.add(col);
+workspace.add(mainRow);
+const col = new BoxRenderable(renderer, {
+  flexGrow: 1, height: "100%", flexDirection: "column", gap: 1,
+});
+mainRow.add(col);
 const header = new BoxRenderable(renderer, {
   width: "100%", height: 3, flexDirection: "row", alignItems: "center",
   justifyContent: "space-between",
@@ -237,7 +239,7 @@ col.add(vizBox);
 const conversation = new ScrollBoxRenderable(renderer, {
   flexGrow: 1, width: "100%", scrollY: true, stickyScroll: true, stickyStart: "bottom",
 });
-const conversationText = new TextRenderable(renderer, { content: 'Say "hey cozy" or press space to talk.\n', fg: colors.ink, width: "100%", wrapMode: "word" });
+const conversationText = new TextRenderable(renderer, { content: "Ready when you are.\n", fg: colors.ink, width: "100%", wrapMode: "word" });
 conversation.add(conversationText);
 col.add(conversation);
 
@@ -247,12 +249,30 @@ const composer = new BoxRenderable(renderer, {
 });
 composer.add(new TextRenderable(renderer, { content: ">", fg: colors.blue, width: 2, height: 1 }));
 const input = new InputRenderable(renderer, {
-  flexGrow: 1, value: "", placeholder: 'say "hey cozy" or type…', placeholderColor: colors.muted,
+  flexGrow: 1, value: "", placeholder: "Type a task, question, or command...", placeholderColor: colors.muted,
   textColor: colors.ink, cursorColor: colors.blue, maxLength: 500,
 });
 composer.add(input);
 col.add(composer);
-col.add(new TextRenderable(renderer, { content: "ctrl+c quit • space talk • esc cancel", fg: colors.faint, height: 1 }));
+col.add(new TextRenderable(renderer, { content: "enter send  •  ctrl+c quit", fg: colors.faint, height: 1 }));
+
+const sidebar = new BoxRenderable(renderer, {
+  width: 32, height: "100%", flexDirection: "column", gap: 1,
+});
+mainRow.add(sidebar);
+sidebar.add(new TextRenderable(renderer, { content: "CONTEXT", fg: colors.blue, height: 1 }));
+const contextText = new TextRenderable(renderer, { content: "0 / 1800 tokens", fg: colors.ink, width: "100%", height: 2, wrapMode: "word" });
+sidebar.add(contextText);
+const contextBar = new TextRenderable(renderer, { content: "", fg: colors.green, width: "100%", height: 1 });
+sidebar.add(contextBar);
+sidebar.add(new TextRenderable(renderer, { content: SEP, fg: colors.track, height: 1 }));
+sidebar.add(new TextRenderable(renderer, { content: "ACTIVITY", fg: colors.blue, height: 1 }));
+const activityText = new TextRenderable(renderer, { content: "Waiting for a task", fg: colors.muted, width: "100%", height: 4, wrapMode: "word" });
+sidebar.add(activityText);
+sidebar.add(new TextRenderable(renderer, { content: SEP, fg: colors.track, height: 1 }));
+sidebar.add(new TextRenderable(renderer, { content: "SERVICES", fg: colors.blue, height: 1 }));
+const servicesText = new TextRenderable(renderer, { content: "", fg: colors.muted, width: "100%", flexGrow: 1, wrapMode: "word" });
+sidebar.add(servicesText);
 
 function pillChunks(now: number): TextChunk[] {
   const chunks: TextChunk[] = [];
@@ -269,18 +289,55 @@ function pillChunks(now: number): TextChunk[] {
   return chunks;
 }
 
-function eventLines(events: EngineEvent[]) {
-  const lines: string[] = [];
-  for (const event of events) {
-    if (event.kind === "heard" || event.kind === "user_msg") lines.push(`> ${textField(event, "text")}\n`);
-    else if (event.kind === "done") lines.push(`${textField(event, "text")}\n`);
-    else if (event.kind === "llm") lines.push(`→ ${textField(event, "tool")}\n`);
-    else if (event.kind === "tool_result") lines.push(`✓ ${textField(event, "name")}\n`);
-    else if (event.kind === "rejected") lines.push(`! ${textField(event, "reason")}\n`);
-    else if (event.kind === "error") lines.push(`× ${textField(event, "msg")}\n`);
-    else if (event.kind === "backend_crash") lines.push(`× engine: ${textField(event, "message")}\n`);
+function friendlyTool(name: string): string {
+  const names: Record<string, string> = {
+    "app.list_running": "Listed open apps", "browser.mcp": "Worked in Firefox",
+    "terminal.run": "Ran terminal command", "python.kernel": "Ran local Python",
+    "terminal.elevate": "Opened elevated terminal",
+    "browser.search": "Searched the web", "screenshot.take": "Captured screen",
+    "rlm.delegate": "Delegated task", "mcp.call": "Used connected service",
+  };
+  return names[name] || name.replaceAll(".", " ");
+}
+
+function markdownChunks(text: string, base: RGBA): TextChunk[] {
+  const chunks: TextChunk[] = [];
+  for (const line of text.split("\n")) {
+    const heading = line.match(/^#{1,3}\s+(.+)/);
+    const bullet = line.match(/^\s*[-*]\s+(.+)/);
+    const body = heading?.[1] || bullet?.[1] || line;
+    if (bullet) chunks.push(chunk("  • ", blue));
+    const parts = body.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+    for (const part of parts) {
+      if (part.startsWith("`") && part.endsWith("`")) chunks.push(chunk(part.slice(1, -1), green));
+      else if (part.startsWith("**") && part.endsWith("**")) chunks.push(chunk(part.slice(2, -2), peach));
+      else chunks.push(chunk(part, heading ? peach : base));
+    }
+    chunks.push(chunk("\n", base));
   }
-  return lines.join("\n") || 'Say "hey cozy" or press space to talk.\n';
+  return chunks;
+}
+
+function eventLines(events: EngineEvent[]) {
+  const chunks: TextChunk[] = [];
+  for (const event of events) {
+    if (event.kind === "heard" || event.kind === "user_msg") {
+      chunks.push(chunk("YOU\n", blue), ...markdownChunks(textField(event, "text"), ink), chunk("\n", ink));
+    } else if (event.kind === "done") {
+      chunks.push(chunk("COZY\n", green), ...markdownChunks(textField(event, "text"), ink), chunk("\n", ink));
+    } else if (event.kind === "tool_result") {
+      chunks.push(chunk(`  ✓ ${friendlyTool(textField(event, "name"))}\n`, green));
+    } else if (event.kind === "tool_fail") {
+      chunks.push(chunk(`  × ${friendlyTool(textField(event, "name"))} failed\n`, red));
+    } else if (event.kind === "rejected") {
+      chunks.push(chunk(`  ! ${textField(event, "reason")}\n`, peach));
+    } else if (event.kind === "error") {
+      chunks.push(chunk(`  × ${textField(event, "msg")}\n`, red));
+    } else if (event.kind === "backend_crash") {
+      chunks.push(chunk(`  × engine: ${textField(event, "message")}\n`, red));
+    }
+  }
+  return chunks.length ? new StyledText(chunks) : new StyledText([chunk("Ready when you are.\n", muted)]);
 }
 
 function updateUi() {
@@ -333,6 +390,24 @@ function updateUi() {
       vizBars.fg = vizColor;
     }
     conversationText.content = eventLines(state.events);
+    const contextPct = Math.max(0, Math.min(1, state.contextUsed / Math.max(1, state.contextLimit)));
+    const contextColumns = 28;
+    contextText.content = `${state.contextUsed} / ${state.contextLimit} tokens\n${Math.round(contextPct * 100)}% active`;
+    contextBar.content = "█".repeat(Math.round(contextPct * contextColumns)) + "░".repeat(contextColumns - Math.round(contextPct * contextColumns));
+    const latestAction = [...state.events].reverse().find(event => event.kind === "llm");
+    const latestResult = [...state.events].reverse().find(event => event.kind === "tool_result" || event.kind === "tool_fail");
+    activityText.content = state.phase === "thinking" && latestAction
+      ? `Working\n${friendlyTool(textField(latestAction, "tool"))}`
+      : latestResult
+        ? `${latestResult.kind === "tool_result" ? "Completed" : "Needs attention"}\n${friendlyTool(textField(latestResult, "name"))}`
+        : state.phase === "listening" || state.phase === "capturing"
+          ? "Listening for voice input"
+          : "Waiting for a task";
+    servicesText.content = MODEL_NAMES.map(name => {
+      const status = state.models[name];
+      const mark = status === "done" ? "●" : status === "failed" ? "×" : "○";
+      return `${mark} ${name}`;
+    }).join("\n");
     input.focus();
   }
   renderer.requestRender();

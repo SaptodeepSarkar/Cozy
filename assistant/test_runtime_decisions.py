@@ -43,3 +43,13 @@ class DecisionRecoveryTests(unittest.TestCase):
         with patch('cozy_log.log_event'):
             self.assertEqual(h.decide('do something unsafe'), ('', {}))
         self.assertIn("safely map", h.trace.append.call_args.args[0].content)
+
+    def test_tool_result_can_trigger_the_next_planned_action(self):
+        h = self.harness([
+            '<tool_call>{"name":"browser.search","arguments":{"query":"cozy"}}</tool_call>'
+        ])
+        self.assertEqual(
+            h.continue_after_tool('app.list_running', 'Firefox, Terminal'),
+            ('browser.search', {'query': 'cozy'}),
+        )
+        self.assertTrue(h.plugins['llm'].load.called)

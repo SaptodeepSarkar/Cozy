@@ -16,13 +16,13 @@ import urllib.parse
 from pathlib import Path
 
 
-def _run(cmd, timeout=15, input=None):
+def _run(cmd, timeout=15, input=None, max_output=400):
     try:
         p = subprocess.run(cmd, capture_output=True, text=True,
                            timeout=timeout, input=input)
         ok = p.returncode == 0
         out = (p.stdout or p.stderr or "").strip()
-        return ok, out[:400]
+        return ok, out[:max_output]
     except FileNotFoundError:
         return False, "missing binary: " + cmd[0]
     except subprocess.TimeoutExpired:
@@ -615,16 +615,120 @@ def app_list_running(params=None):
                     if t not in seen:
                         seen.add(t); unique.append(t)
                 return True, ", ".join(unique[:12])
-    # fallback to ps
-    ok, out = _run(["ps", "-eo", "comm"], timeout=5)
-    if ok:
-        apps = [ln.strip() for ln in out.splitlines()
-                if ln.strip() and not ln.startswith("ps")
-                and not ln.startswith("[")
-                and not ln.startswith("kthread")
-                and len(ln.strip()) > 2]
-        return True, ", ".join(apps[:8]) if apps else "no apps found"
-    return False, "could not list apps"
+    hyprctl = _which_any("hyprctl")
+    if hyprctl:
+        ok, out = _run([hyprctl, "clients", "-j"], timeout=5, max_output=120000)
+        if ok:
+            try:
+                windows = json.loads(out)
+                names = []
+                for window in windows:
+                    title = str(window.get("title") or window.get("class") or "").strip()
+                    if title and title not in names:
+                        names.append(title)
+                if names:
+                    return True, ", ".join(names[:12])
+            except (TypeError, ValueError):
+                pass
+    # Process lists include services such as systemd and worker pools, not
+    # desktop apps. Failing clearly is more useful than reading that noise.
+    return False, "could not inspect desktop windows; install wmctrl or use Hyprland"
+
+
+def _within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _terminal_sandbox(command: str, cwd: Path) -> list[str] | None:
+    """Build a sandbox with the OS readable and only home/tmp writable."""
+    bwrap = _which_any("bwrap")
+    if not bwrap:
+        return None
+    home = Path.home().resolve()
+    # The root bind is read-only. These two nested mounts are the only places
+    # a normal agent command can create, modify, or delete files.
+    return [
+        bwrap, "--die-with-parent", "--new-session", "--cap-drop", "ALL",
+        "--ro-bind", "/", "/",
+        "--bind", str(home), str(home),
+        "--bind", "/tmp", "/tmp",
+        "--dev", "/dev", "--proc", "/proc",
+        "--chdir", str(cwd), "--", "bash", "-lc", command,
+    ]
+
+
+def _has_elevation(command: str) -> bool:
+    """Refuse in-sandbox privilege escalation; passwords never reach Cozy."""
+    return bool(__import__("re").search(
+        r"(^|[;|&()\n]\s*|\s)(?:sudo|doas|pkexec|su)\b", command))
+
+
+def terminal_run(params):
+    """Run a bounded command with read-only system access."""
+    command = str((params or {}).get("command") or "").strip()
+    if not command:
+        return False, "terminal.run requires a command"
+    if len(command) > 4000:
+        return False, "command is too long (maximum 4000 characters)"
+    if _has_elevation(command):
+        return False, "elevation is blocked here; use terminal.elevate so your password stays in a real terminal"
+    cwd = str((params or {}).get("cwd") or Path.home())
+    try:
+        cwd_path = Path(cwd).expanduser().resolve()
+    except OSError:
+        return False, "invalid working directory"
+    if not cwd_path.is_dir():
+        return False, f"working directory does not exist: {cwd_path}"
+    sandboxed = _terminal_sandbox(command, cwd_path)
+    if sandboxed is None:
+        return False, "terminal sandbox unavailable: install bubblewrap (bwrap)"
+    try:
+        process = subprocess.run(
+            sandboxed, text=True,
+            capture_output=True, timeout=min(90, max(1, int((params or {}).get("timeout", 30)))),
+        )
+    except subprocess.TimeoutExpired:
+        return False, "command timed out"
+    output = (process.stdout or process.stderr or "").strip()
+    output = output[:6000]
+    return process.returncode == 0, output or ("command completed" if process.returncode == 0 else f"command exited {process.returncode}")
+
+
+def terminal_elevate(params):
+    """Open an interactive terminal where only the owner can enter sudo auth."""
+    command = str((params or {}).get("command") or "").strip()
+    if not command:
+        return False, "terminal.elevate requires a command"
+    if len(command) > 4000:
+        return False, "command is too long (maximum 4000 characters)"
+    cwd = Path(str((params or {}).get("cwd") or Path.home())).expanduser().resolve()
+    if not cwd.is_dir():
+        return False, f"working directory does not exist: {cwd}"
+    # The password prompt belongs to sudo in an interactive terminal. It is
+    # never included in an MCP argument, log entry, model context, or trace.
+    script = f"cd {shlex.quote(str(cwd))}; sudo -- bash -lc {shlex.quote(command)}; status=$?; echo; echo \"Cozy elevated command finished (status $status).\"; exec bash"
+    terminals = [
+        ("gnome-terminal", ["--", "bash", "-lc", script]),
+        ("kgx", ["--", "bash", "-lc", script]),
+        ("konsole", ["-e", "bash", "-lc", script]),
+        ("xfce4-terminal", ["-x", "bash", "-lc", script]),
+        ("kitty", ["bash", "-lc", script]),
+        ("x-terminal-emulator", ["-e", "bash", "-lc", script]),
+    ]
+    for binary, args in terminals:
+        resolved = _which_any(binary)
+        if not resolved:
+            continue
+        try:
+            subprocess.Popen([resolved, *args], start_new_session=True)
+            return True, "opened an elevated terminal; enter your password there to continue"
+        except OSError:
+            continue
+    return False, "no graphical terminal found for the secure sudo prompt"
 
 
 def app_switch(params):
@@ -691,6 +795,8 @@ HANDLERS = {
     "calc.compute": calc_compute,
     "app.list_running": app_list_running,
     "app.switch": app_switch,
+    "terminal.run": terminal_run,
+    "terminal.elevate": terminal_elevate,
 }
 
 

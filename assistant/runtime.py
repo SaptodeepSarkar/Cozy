@@ -287,6 +287,11 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
             t0 = _time.time()
             name, args = harness.decide(text)
             dt = _time.time() - t0
+            try:
+                used, limit = harness.context_usage()
+                json_emit("context", used=used, limit=limit)
+            except Exception:
+                pass
             if name == "none" or name == "":
                 reply = ""
                 for tr in reversed(harness.trace.recent):
@@ -304,24 +309,39 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                     tts_speak(reply)
                 json_emit("done", text=reply, dt=_time.time() - t0)
             elif name:
-                json_emit("llm", tool=name, args=str(args)[:60], dt=dt)
-                if name == "rlm.delegate":
-                    from rlm_harness.rlm import execute_delegate
-                    delegated = execute_delegate(args or {}, harness)
-                    result = {"ok": True, "output": delegated}
-                else:
-                    result = executor(name, args or {})
-                output = str(result.get("output", ""))
-                if result.get("ok"):
-                    reply = output or "Done."
-                    json_emit("tool_result", name=name, out=output)
-                else:
-                    reply = f"Failed: {output or 'the action did not complete.'}"
-                    json_emit("tool_fail", name=name, out=output)
-                reply = _strip_reply_echo(reply)
-                from rlm_harness.harness_fast import Turn
-                harness.trace.append(Turn(role="tool", name=name, content=output, producer="tool"))
-                harness.trace.append(Turn(role="assistant", content=reply, producer="model"))
+                # The planner can inspect each tool result and choose a next
+                # action. A hard cap prevents a malformed remote response from
+                # looping forever while still allowing browser workflows.
+                completed = []
+                reply = ""
+                for _step in range(6):
+                    json_emit("llm", tool=name, args=str(args)[:160], dt=_time.time() - t0)
+                    if name == "rlm.delegate":
+                        from rlm_harness.rlm import execute_delegate
+                        result = {"ok": True, "output": execute_delegate(args or {}, harness)}
+                    else:
+                        result = executor(name, args or {})
+                    output = str(result.get("output", ""))
+                    completed.append(name)
+                    if result.get("ok"):
+                        json_emit("tool_result", name=name, out=output)
+                    else:
+                        json_emit("tool_fail", name=name, out=output)
+                    name, args = harness.continue_after_tool(name, output)
+                    try:
+                        used, limit = harness.context_usage()
+                        json_emit("context", used=used, limit=limit)
+                    except Exception:
+                        pass
+                    if not name or name == "none":
+                        break
+                for tr in reversed(harness.trace.recent):
+                    if tr.role == "assistant" and tr.content:
+                        reply = tr.content
+                        break
+                if name:
+                    reply = f"I completed {len(completed)} steps and stopped at the task limit."
+                reply = _strip_reply_echo(reply or "Completed the requested action.")
                 if tts_enabled and is_available():
                     json_emit("tts", text=reply)
                     tts_speak(reply)
