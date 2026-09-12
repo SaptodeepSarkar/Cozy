@@ -51,6 +51,16 @@ def rlm_delegate(task: str, parent: FastHarness,
     if depth > MAX_DEPTH:
         raise RuntimeError(
             f"RLM depth {depth} exceeds MAX_DEPTH={MAX_DEPTH}")
+    task = str(task).strip()
+    if not task:
+        return "Delegation requires a non-empty task."
+
+    schema_path = ASSISTANT.parent / "team" / "tool_schema.json"
+    valid_tools = {item["name"] for item in json.loads(schema_path.read_text())["tools"]}
+    if allow is not None:
+        allow = [name for name in allow if name in valid_tools]
+        if not allow:
+            return "Delegation did not include any valid allowed tools."
 
     child_id = _next_child_id()
 
@@ -78,7 +88,6 @@ def rlm_delegate(task: str, parent: FastHarness,
     # cache so the child only sees those tools.
     if allow is not None:
         # Write a filtered tool cache file
-        schema_path = ASSISTANT.parent / "team" / "tool_schema.json"
         full = json.loads(schema_path.read_text())
         full["tools"] = [t for t in full["tools"] if t["name"] in allow]
         # The ToolSchemaCache will build a fresh _repr when it loads.
@@ -96,28 +105,49 @@ def rlm_delegate(task: str, parent: FastHarness,
     child.trace.append(Turn(
         role="system", content=f"spawned for task: {task}",
         producer="rlm-parent", tokens=10))
-    child.trace.append(Turn(role="user", content=task, producer="user"))
-
     # Also log the spawn event to the PARENT's trace
     parent.trace._sync_from_disk()
     parent.trace.append(Turn(
         role="system",
         content=f"rlm: spawned child {child_id} depth={depth} for task: {task[:100]}",
         producer="rlm-spawn", tokens=15))
-    from .cozy_log import log_event
+    from cozy_log import log_event
     log_event("rlm.spawn", child_id=child_id, depth=depth, task=task[:200],
               allow=allow)
 
     # Run the child to completion
     try:
-        child.decide(task)  # the user's task is the input
-        # The child will append a tool result + assistant reply if the
-        # tool fired. If it didn't fire, we need the assistant text.
-        last_text = ""
-        for t in reversed(child.trace.recent):
-            if t.role == "assistant" and t.content:
-                last_text = t.content
-                break
+        name, args = child.decide(task)
+        if name:
+            if allow is not None and name not in allow:
+                last_text = f"Child action {name} was blocked by its tool scope."
+            elif name == "rlm.delegate":
+                nested_task = str(args.get("task", ""))
+                nested_allow = args.get("allow")
+                if isinstance(nested_allow, str):
+                    nested_allow = [item.strip() for item in nested_allow.split(",") if item.strip()]
+                last_text = rlm_delegate(
+                    nested_task, child, allow=nested_allow or allow,
+                    depth=depth + 1)
+            else:
+                from executor import execute
+                result = execute(name, args)
+                output = str(result.get("output", "")).strip()
+                last_text = output or ("Done." if result.get("ok") else "The action failed.")
+                if not result.get("ok"):
+                    last_text = "Failed: " + last_text
+                child.trace.append(Turn(
+                    role="tool", name=name, content=output, producer="tool"))
+                child.trace.append(Turn(
+                    role="assistant", content=last_text, producer="model"))
+        else:
+            last_text = ""
+        # For chat responses, recover the latest assistant text.
+        if not last_text:
+            for t in reversed(child.trace.recent):
+                if t.role == "assistant" and t.content:
+                    last_text = t.content
+                    break
         if not last_text:
             last_text = f"[child {child_id} produced no text reply]"
 

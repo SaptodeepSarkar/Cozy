@@ -237,6 +237,8 @@ class Trace:
     def append(self, turn: Turn) -> None:
         """Append a new turn to disk + RAM. Re-compact if over budget."""
         self._sync_from_disk()
+        if turn.tokens <= 0:
+            turn.tokens = max(1, len(json.dumps(turn.to_dict(), ensure_ascii=False)) // 4)
         self._recent.append(turn)
         line = json.dumps(turn.to_dict(), ensure_ascii=False)
         with open(self.cfg.trace_file, "a") as f:
@@ -280,7 +282,11 @@ class Trace:
             if t.role == "user":
                 bits.append(f"User: {t.content[:60]}")
             elif t.role == "assistant" and t.content:
-                bits.append(f"Assistant: {t.content[:60]}")
+                clean = re.sub(
+                    r"<think>.*?(?:</think>|$)", "", t.content,
+                    flags=re.S).strip()
+                if clean:
+                    bits.append(f"Assistant: {clean[:60]}")
             elif t.role == "assistant" and t.tool_calls:
                 tc = t.tool_calls[0]
                 bits.append(f"Assistant called {tc.get('function', {}).get('name', '?')}")
@@ -299,16 +305,37 @@ class Trace:
         msgs = [{"role": "system", "content": system + "\n\n" + tools_repr}]
         if self._summary:
             msgs.append({"role": "system",
-                         "content": f"Earlier context summary: {self._summary}"})
+                         "content": f"Earlier context summary: {self._summary[-800:]}"})
+        recent_msgs = []
         for t in self._recent:
             d = {"role": t.role}
             if t.content:
-                d["content"] = t.content
+                content = t.content
+                if t.role == "assistant":
+                    content = re.sub(
+                        r"<think>.*?(?:</think>|$)", "", content,
+                        flags=re.S).strip()
+                if content:
+                    d["content"] = content
             if t.tool_calls:
                 d["tool_calls"] = t.tool_calls
             if t.name and t.role == "tool":
                 d["name"] = t.name
-            msgs.append(d)
+            recent_msgs.append(d)
+        # Keep newest turns within the configured budget. The static tool
+        # schema may itself be large, so reserve a small conversation floor
+        # rather than accidentally dropping the current user message.
+        base_chars = sum(len(json.dumps(m, ensure_ascii=False)) for m in msgs)
+        conversation_budget = max(800, self.cfg.max_context_tokens * 4 - base_chars)
+        selected = []
+        used = 0
+        for message in reversed(recent_msgs):
+            size = len(json.dumps(message, ensure_ascii=False))
+            if selected and used + size > conversation_budget:
+                break
+            selected.append(message)
+            used += size
+        msgs.extend(reversed(selected))
         # Approximate token count: 4 chars per token
         n_tokens = sum(len(json.dumps(m, ensure_ascii=False)) for m in msgs) // 4
         return msgs, n_tokens
@@ -462,7 +489,7 @@ def extract_tool_call(text: str) -> tuple[str, dict]:
     # a stray JSON object from the model's reasoning. Also strip Qwen
     # chat-template end tokens (the model often stops before emitting
     # the closing brace of the outer JSON).
-    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+    cleaned = re.sub(r"<think>.*?(?:</think>|$)", "", text, flags=re.S)
     cleaned = re.sub(r"<\|.*?\|>", "", cleaned, flags=re.S).strip()
     m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", cleaned, re.S)
     if m:
@@ -596,6 +623,18 @@ class FastHarness:
             # 1. Record the user turn
             self.trace.append(Turn(role="user", content=user_text,
                                     producer="user"))
+            # High-confidence desktop commands should not wait for, or be
+            # misrouted by, the small generative model. The intent router is
+            # deliberately narrow; unmatched requests still go to the LLM.
+            name, args = self._rule_tool_call(user_text)
+            if name:
+                self.trace.append(Turn(
+                    role="assistant", content="",
+                    tool_calls=[{"type": "function", "function": {
+                        "name": name,
+                        "arguments": json.dumps(args, ensure_ascii=False),
+                    }}], producer="rule"))
+                return name, args
             # 2. Sync from disk (other agents may have written to trace)
             self.trace._sync_from_disk()
             # 3. Build prompt
@@ -606,13 +645,13 @@ class FastHarness:
                 return "", {}
             llm.load()
             llm.touch()
-            raw = llm.generate(msgs, max_new_tokens=512)
+            raw = llm.generate(msgs, max_new_tokens=160)
             # A sentinel is not a conversational answer. Retry once without
             # stale trace context; never execute the sentinel as a tool.
             if raw.strip().lower() in {"", "none", "null"}:
                 raw = llm.generate([
                     {"role": "system", "content": self.system},
-                    {"role": "user", "content": user_text}], max_new_tokens=256)
+                    {"role": "user", "content": user_text}], max_new_tokens=96)
             if raw.strip().lower() in {"", "none", "null"}:
                 raw = "I couldn't understand that request. Please try rephrasing it."
             # 5. Extract tool call
@@ -628,6 +667,15 @@ class FastHarness:
             if name:
                 name = self._normalize_tool_name(name)
             if name:
+                schema = json.loads(
+                    (ASSISTANT.parent / "team" / "tool_schema.json").read_text())["tools"]
+                if name not in {tool["name"] for tool in schema}:
+                    # Never let a hallucinated or hidden executor handler
+                    # become an action. The schema is the model's authority
+                    # boundary, not merely prompt decoration.
+                    raw = "I couldn't safely map that request to an available action."
+                    name, args = "", {}
+            if name:
                 self.trace.append(Turn(
                     role="assistant", content="",
                     tool_calls=[{"type": "function",
@@ -636,7 +684,7 @@ class FastHarness:
                     producer="model"))
             else:
                 # Strip any thinking block
-                raw = re.sub(r"</think>.*?</think>", "", raw, flags=re.S).strip()
+                raw = re.sub(r"<think>.*?(?:</think>|$)", "", raw, flags=re.S).strip()
                 self.trace.append(Turn(role="assistant", content=raw, producer="model"))
             # 6. Maybe unload idle plugins
             for p in self.plugins.values():
@@ -648,6 +696,41 @@ class FastHarness:
             except Exception:
                 pass
             return name, args
+
+    @staticmethod
+    def _rule_tool_call(user_text: str) -> tuple[str, dict]:
+        """Translate only unambiguous legacy intent rules to real tools."""
+        from intents import route
+        decision = route(user_text)
+        tool = decision.get("tool")
+        args = decision.get("args") or {}
+        if tool == "query_time":
+            return "time.now", {}
+        if tool == "open_app" and args.get("app"):
+            return "app.open", {"name": args["app"]}
+        if tool == "browser_search" and args.get("q"):
+            return "browser.search", {"query": args["q"]}
+        if tool == "screenshot":
+            return "screenshot.take", {}
+        if tool == "set_volume" and "level" in args:
+            return "system.volume.set", {"level": args["level"]}
+        if tool == "mute_volume":
+            return "system.volume.mute", {}
+        if tool == "set_brightness":
+            return "system.brightness.set", {"level": args["level"]}
+        if tool == "close_app":
+            return "app.close", {"name": args["app"]}
+        if tool == "media_play":
+            return "media.play", {}
+        if tool == "media_pause":
+            return "media.pause", {}
+        if tool == "query_date":
+            return "date.now", {}
+        if tool == "battery_status":
+            return "system.battery.status", {}
+        if tool == "system_uptime":
+            return "system.uptime", {}
+        return "", {}
 
     def _normalize_tool_name(self, name: str) -> str:
         """Normalize hallucinated tool names to valid ones."""
@@ -691,11 +774,15 @@ class FastHarness:
             prefix, leaf = parts[0].lower(), parts[1].lower()
             base = leaf.split("_")[0] if "_" in leaf else leaf
             for vt in valid_tools:
+                if "." not in vt:
+                    continue
                 vt_parts = vt.rsplit(".", 1)
                 vt_prefix, vt_leaf = vt_parts[0].lower(), vt_parts[1].lower()
                 if vt_prefix == prefix and vt_leaf.startswith(base):
                     return vt
             for vt in valid_tools:
+                if "." not in vt:
+                    continue
                 vt_parts = vt.rsplit(".", 1)
                 vt_prefix, vt_leaf = vt_parts[0].lower(), vt_parts[1].lower()
                 if vt_leaf == base:

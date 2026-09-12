@@ -28,27 +28,38 @@ esac
 
 case "${1:-}" in
   "" | --tui | --text | --no-wake | --no-tts | --threshold)
-    # Launch the Node Ink TUI by default.
+    # Launch the OpenTUI interface by default.
     if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-      echo "Node.js 20+ and npm are required for the Cozy terminal UI." >&2
+      echo "Node.js 26.4+ and npm are required for the Cozy OpenTUI interface." >&2
       exit 1
     fi
-    if [ ! -x "$ROOT/assistant/tui-node/node_modules/.bin/tsx" ]; then
+    NODE_VERSION="$(node -p 'process.versions.node.split(".").map(Number)' 2>/dev/null || true)"
+    NODE_MAJOR="${NODE_VERSION%%,*}"
+    NODE_MINOR="${NODE_VERSION#*,}"; NODE_MINOR="${NODE_MINOR%%,*}"
+    if [[ -z "$NODE_MAJOR" ]] || (( NODE_MAJOR < 26 || (NODE_MAJOR == 26 && NODE_MINOR < 4) )); then
+      echo "Cozy OpenTUI needs Node.js 26.4 or newer (found $(node --version))." >&2
+      exit 1
+    fi
+    if [ ! -d "$ROOT/assistant/tui-node/node_modules/@opentui/core" ]; then
       echo "Installing tui-node deps..." >&2
       (cd "$ROOT/assistant/tui-node" && npm ci --silent) || exit 1
     fi
-    # Execute tsx directly so npm cannot buffer or consume terminal input.
-    # Ink needs the controlling TTY in raw mode for character-by-character
-    # text entry and Ctrl+C handling.
-    exec "$ROOT/assistant/tui-node/node_modules/.bin/tsx" \
-      "$ROOT/assistant/tui-node/src/index.tsx" "$@"
+    exec node --experimental-ffi "$ROOT/assistant/tui-node/src/index.ts" "$@"
     ;;
   --status)
     echo "Cozy model status:"
+    STT_CT2="$ROOT/stt-finetune/output/cozy_stt_v1_ct2_int8/model.bin"
+    STT_HF="$ROOT/stt-finetune/output/hf_finetuned/pytorch_model.bin"
+    if [[ -f "$ROOT/stt-finetune/output/cozy_stt_v1.2_ct2_int8/model.bin" ]]; then
+      STT_CT2="$ROOT/stt-finetune/output/cozy_stt_v1.2_ct2_int8/model.bin"
+    fi
+    if [[ -f "$ROOT/stt-finetune/output/hf_finetuned_v1.2/model.safetensors" ]]; then
+      STT_HF="$ROOT/stt-finetune/output/hf_finetuned_v1.2/model.safetensors"
+    fi
     for p in \
       "$ROOT/wakeword/output/hey_cozy/hey_cozy.onnx" \
-      "$ROOT/stt-finetune/output/cozy_stt_v1_ct2_int8/model.bin" \
-      "$ROOT/stt-finetune/output/hf_finetuned/pytorch_model.bin" \
+      "$STT_CT2" \
+      "$STT_HF" \
       "$ROOT/assistant/model/cozy-llm-v1/model.safetensors" \
       "$ROOT/assistant/model/cozy-llm-v1-adapter/adapter_model.safetensors"; do
       if [[ -e "$p" ]]; then
@@ -61,7 +72,13 @@ case "${1:-}" in
     exit 0
     ;;
   --stop)
-    pkill -f 'assistant/runtime.py' && echo "cozy stopped" || echo "no cozy process"
+    stopped=0
+    for pattern in "$ROOT/assistant/runtime.py" "$ROOT/assistant/tui-node/src/index.ts"; do
+      if pkill -TERM -f -- "$pattern" 2>/dev/null; then
+        stopped=1
+      fi
+    done
+    if [[ "$stopped" -eq 1 ]]; then echo "cozy stopped"; else echo "no cozy process"; fi
     exit 0
     ;;
   --help|-h)

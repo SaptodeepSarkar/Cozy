@@ -20,6 +20,7 @@ Config: assistant/voice.cfg
 from __future__ import annotations
 
 import os
+import hashlib
 import json
 import sys
 import threading
@@ -35,6 +36,7 @@ _CACHE_DIR = Path("/tmp/cozy_tts_cache")
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _pipeline = None
+_pipeline_error = None
 _pipeline_lock = threading.Lock()
 _worker_started = False
 _worker_thread = None
@@ -51,6 +53,16 @@ def _runtime_error(message: str) -> None:
         return
     try:
         sys.stdout.write(json.dumps({"kind": "error", "msg": message}) + "\n")
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
+def _runtime_event(kind: str, **fields) -> None:
+    if os.environ.get("COZY_TUI_MODE") != "node":
+        return
+    try:
+        sys.stdout.write(json.dumps({"kind": kind, **fields}) + "\n")
         sys.stdout.flush()
     except Exception:
         pass
@@ -79,7 +91,7 @@ def _load_cfg():
 
 def _get_pipeline():
     """Lazy-load the Kokoro pipeline. Cached after first call."""
-    global _pipeline
+    global _pipeline, _pipeline_error
     if _pipeline is not None:
         return _pipeline
     with _pipeline_lock:
@@ -91,7 +103,16 @@ def _get_pipeline():
             from kokoro import KPipeline
             cfg = _load_cfg()
             print(f"[tts] loading Kokoro pipeline (voice={cfg['voice']}, lang={cfg['lang']})...", flush=True)
-            _pipeline = KPipeline(lang_code=cfg["lang"])
+            _pipeline = KPipeline(
+                lang_code=cfg["lang"],
+                repo_id="hexgrad/Kokoro-82M",
+                device="cpu",
+            )
+            # Loading the pipeline alone does not load/validate the selected
+            # voice. Do that during startup so the first reply cannot discover
+            # a missing or corrupt voice file.
+            _pipeline.load_voice(str(cfg["voice"]))
+            _pipeline_error = None
             print(f"[tts] Kokoro ready (voice={cfg['voice']})", flush=True)
             return _pipeline
         except Exception as exc:
@@ -99,6 +120,7 @@ def _get_pipeline():
             _runtime_error(f"TTS unavailable: {exc}")
             print("[tts] falling back to silent mode", flush=True)
             _pipeline = None
+            _pipeline_error = str(exc)
             return None
 
 
@@ -111,6 +133,16 @@ def is_available() -> bool:
         return False
 
 
+def warmup() -> bool:
+    """Load Kokoro during the startup screen instead of on the first reply."""
+    return _get_pipeline() is not None
+
+
+def initialization_error() -> str:
+    """Return the last Kokoro initialization error for startup diagnostics."""
+    return str(_pipeline_error or "")
+
+
 def _synthesize(text: str) -> "tuple[object, int] | None":
     """Synthesize text. Returns (samples, sample_rate) or None on failure."""
     p = _get_pipeline()
@@ -120,13 +152,24 @@ def _synthesize(text: str) -> "tuple[object, int] | None":
     voice = cfg["voice"]
     speed = float(cfg["speed"])
     try:
-        # KPipeline returns (graphemes, phonemes, audio) tuples.
+        # KPipeline may yield multiple sentence-sized chunks. Returning only
+        # the first one silently cut off longer replies.
+        chunks = []
         for _gs, _ps, audio in p(text, voice=voice, speed=speed):
             if audio is not None:
-                return audio, 24000
+                chunks.append(audio)
+        if chunks:
+            import numpy as np
+            return np.concatenate([np.asarray(chunk).reshape(-1) for chunk in chunks]), 24000
     except Exception as exc:
         print(f"[tts] synth error: {exc}")
     return None
+
+
+def _cache_path(text: str) -> Path:
+    safe = "".join(c if c.isalnum() else "_" for c in text)[:40]
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    return _CACHE_DIR / f"{safe}_{digest}.wav"
 
 
 def _play(samples, sr: int) -> None:
@@ -154,12 +197,13 @@ def _ensure_worker():
         while True:
             text = _speak_queue.get()
             if text is None:
+                _speak_queue.task_done()
                 break
             try:
                 _speaking.set()
+                _runtime_event("tts_start", text=text)
                 # Cache hit?
-                safe = "".join(c if c.isalnum() else "_" for c in text)[:64]
-                cache_path = _CACHE_DIR / f"{safe}.wav"
+                cache_path = _cache_path(text)
                 if cache_path.exists():
                     _play(str(cache_path), 24000)
                 else:
@@ -177,6 +221,7 @@ def _ensure_worker():
                 print(f"[tts] worker error: {exc}")
             finally:
                 _speaking.clear()
+                _runtime_event("tts_done")
                 _speak_queue.task_done()
     t = threading.Thread(target=loop, daemon=True, name="cozy-tts")
     t.start()
@@ -224,7 +269,10 @@ def speak(text: str, blocking: bool = False) -> None:
 
 
 def is_speaking() -> bool:
-    return _speaking.is_set()
+    # Queue accounting closes the small gap between speak() enqueueing a
+    # reply and the worker setting _speaking. Without it, the mic can capture
+    # the first syllable of Cozy's own response.
+    return _speaking.is_set() or _speak_queue.unfinished_tasks > 0
 
 
 def say(text: str) -> None:

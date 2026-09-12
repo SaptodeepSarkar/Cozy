@@ -51,14 +51,25 @@ def python_for(folder: str) -> str:
     return str(candidate) if candidate.exists() else sys.executable
 
 
-def stage_commands(profile: str, components: set[str]) -> list[tuple[str, list[str]]]:
+def stage_commands(profile: str, components: set[str],
+                   run_dir: Path | None = None) -> list[tuple[str, list[str]]]:
     assistant = python_for("assistant")
     stt = python_for("stt-finetune")
     smoke = profile == "smoke"
-    llm_sft = [assistant, "assistant/sft_qwen.py", "--epochs", "1" if smoke else ("5" if profile == "quality" else "3"), "--workers", "1" if smoke else "4"]
+    scratch = (run_dir or RUNS / "smoke") / "smoke_outputs"
+    llm_model = scratch / "llm" if smoke else ROOT / "assistant/model/cozy-llm-v1"
+    llm_adapter = scratch / "llm-adapter" if smoke else ROOT / "assistant/model/cozy-llm-v1-adapter"
+    llm_runs = scratch / "llm-runs" if smoke else ROOT / "assistant/model/sft_runs"
+    llm_pairs = scratch / "dpo_pairs.jsonl" if smoke else ROOT / "assistant/data/dpo_pairs_short.jsonl"
+    llm_metrics = scratch / "rlvr_metrics.json" if smoke else ROOT / "assistant/data/rlvr_metrics.json"
+    dpo_out = scratch / "llm-dpo" if smoke else ROOT / "assistant/model/cozy-llm-v1-dpo"
+    llm_sft = [assistant, "assistant/sft_qwen.py", "--epochs", "1" if smoke else ("5" if profile == "quality" else "3"), "--workers", "1" if smoke else "4",
+               "--out", str(llm_model), "--adapter-out", str(llm_adapter), "--run-dir", str(llm_runs)]
     if smoke:
         llm_sft += ["--max-steps", "2", "--eval-steps", "2", "--batch-size", "1", "--grad-accum", "1"]
-    stt_out = ROOT / "stt-finetune" / "checkpoints" / "lora_cozy_pipeline"
+    stt_out = scratch / "stt-checkpoint" if smoke else ROOT / "stt-finetune" / "checkpoints" / "lora_cozy_pipeline"
+    stt_hf = scratch / "stt-hf" if smoke else ROOT / "stt-finetune/output/hf_finetuned_v4layout"
+    stt_ct2 = scratch / "stt-ct2" if smoke else ROOT / "stt-finetune/output/cozy_stt_v1_ct2_int8"
     stt_sft = [stt, "stt-finetune/scripts/train_lora.py", "--epochs", "1" if smoke else ("5" if profile == "quality" else "3"), "--workers", "0" if smoke else "2", "--out", str(stt_out)]
     if smoke:
         stt_sft += ["--max-steps", "2", "--batch-size", "1", "--grad-accum", "1", "--eval-steps", "2"]
@@ -67,17 +78,17 @@ def stage_commands(profile: str, components: set[str]) -> list[tuple[str, list[s
         commands += [
             ("llm-data", [assistant, "assistant/make_dataset.py", "--val-fraction", "0.10"]),
             ("llm-sft", llm_sft),
-            ("llm-rlvr", [assistant, "assistant/rlvr.py", "--limit", "4" if smoke else "0"]),
-            ("llm-dpo", [assistant, "assistant/dpo_light.py", "--epochs", "1" if smoke else "2"]),
-            ("llm-benchmark", [assistant, "models/benchmarks/eval_llm.py", "--limit", "4" if smoke else "0", "--model", f"sft={ROOT / 'assistant/model/cozy-llm-v1'}"]),
+            ("llm-rlvr", [assistant, "assistant/rlvr.py", "--model", str(llm_model), "--out", str(llm_pairs), "--metrics-out", str(llm_metrics), "--limit", "4" if smoke else "0"]),
+            ("llm-dpo", [assistant, "assistant/dpo_light.py", "--model", str(llm_model), "--pairs", str(llm_pairs), "--out", str(dpo_out), "--epochs", "1" if smoke else "2"]),
+            ("llm-benchmark", [assistant, "models/benchmarks/eval_llm.py", "--limit", "4" if smoke else "0", "--model", f"sft={llm_model}"]),
         ]
     if "stt" in components:
         commands += [
             ("stt-data", [stt, "stt-finetune/scripts/prepare_data.py"]),
             ("stt-baseline", [stt, "stt-finetune/scripts/baseline_eval.py", "--limit", "2" if smoke else "0", "--tag", "baseline"]),
             ("stt-sft", stt_sft),
-            ("stt-export", [stt, "stt-finetune/scripts/export_overlay.py", "--adapter", str(stt_out / "adapter")]),
-            ("stt-benchmark", [stt, "stt-finetune/scripts/baseline_eval.py", "--hf", str(ROOT / "stt-finetune/output/hf_finetuned_v4layout"), "--limit", "2" if smoke else "0", "--tag", "cozy-lora"]),
+            ("stt-export", [stt, "stt-finetune/scripts/export_overlay.py", "--adapter", str(stt_out / "adapter"), "--hf-out", str(stt_hf), "--ct2-out", str(stt_ct2)]),
+            ("stt-benchmark", [stt, "stt-finetune/scripts/baseline_eval.py", "--hf", str(stt_hf), "--limit", "2" if smoke else "0", "--tag", "cozy-lora"]),
         ]
     return commands
 
@@ -96,7 +107,8 @@ def main() -> int:
     unknown = components - {"llm", "stt"}
     if unknown:
         parser.error(f"unknown components: {', '.join(sorted(unknown))}")
-    commands = stage_commands(args.profile, components)
+    run_dir = RUNS / args.run_id
+    commands = stage_commands(args.profile, components, run_dir)
     if args.only:
         commands = [item for item in commands if item[0] == args.only]
         if not commands:
@@ -107,7 +119,6 @@ def main() -> int:
             parser.error(f"unknown stage {args.from_stage!r}")
         commands = commands[names.index(args.from_stage):]
 
-    run_dir = RUNS / args.run_id
     state_path = run_dir / "state.json"
     old = json.loads(state_path.read_text()) if args.resume and state_path.exists() else {"stages": {}}
     manifest = {"run_id": args.run_id, "profile": args.profile, "components": sorted(components),

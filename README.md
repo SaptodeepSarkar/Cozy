@@ -5,9 +5,10 @@ A local, private, voice-controlled assistant. Say **"hey cozy"** and your PC
 
 ## v1.53 — typed UI and reproducible training
 
-The default terminal interface is now a strict TypeScript/React + Ink app with
-crash recovery, an always-visible composer, pipeline status, and the animated
-Cozy cat. Model work is reproducible with one resumable command:
+The default interface now uses strict TypeScript with OpenTUI core. It has a
+model-gated loading screen, persistent conversation, native text input, and a
+solid SVG-derived Cozy mark. Model work is reproducible with one resumable
+command:
 
 ```bash
 bash train.sh --profile smoke       # safe 1–2 step validation

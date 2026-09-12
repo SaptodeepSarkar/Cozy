@@ -10,7 +10,7 @@ TOOL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
 
 
 def strip_thinking(text: str) -> str:
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+    return re.sub(r"<think>.*?(?:</think>|$)", "", text, flags=re.S).strip()
 
 
 def parse_tool_call(text: str) -> dict[str, Any] | None:

@@ -66,5 +66,23 @@ class CalculatorTests(unittest.TestCase):
                 self.assertFalse(executor.calc_compute({'expression': expr})[0])
 
 
+class DesktopActionTests(unittest.TestCase):
+    def test_missing_levels_never_silently_change_settings(self):
+        self.assertFalse(executor.system_volume_set({})[0])
+        self.assertFalse(executor.system_brightness_set({})[0])
+
+    def test_screenshot_failure_is_not_wrapped_as_success(self):
+        with patch.object(executor, '_which_any', side_effect=lambda name: '/usr/bin/grim' if name == 'grim' else None), \
+             patch.object(executor, '_run', return_value=(False, 'capture failed')):
+            result = executor.execute('screenshot.take', {})
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['output'], 'capture failed')
+
+    def test_missing_application_is_reported_instead_of_opened_as_a_file(self):
+        with patch.object(executor, '_which_any', return_value=None):
+            self.assertEqual(executor.app_open({'name': 'definitely-missing'}),
+                             (False, 'application not found: definitely-missing'))
+
+
 if __name__ == '__main__':
     unittest.main()

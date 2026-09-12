@@ -1,7 +1,10 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from pathlib import Path
 import numpy as np
 import stt
+import runtime
+import tts
 import executor
 from rlm_harness.dataset_mode import parse_tool_call
 from rlm_harness.harness import RuleBackend
@@ -32,6 +35,83 @@ class PipelineTests(unittest.TestCase):
     def test_diagnostic_tools(self):
         for name in ['system.info', 'system.disk.usage', 'system.memory.status', 'system.uptime']:
             self.assertTrue(executor.execute(name)['ok'], name)
+
+    def test_runtime_uses_room_safe_wake_threshold(self):
+        self.assertAlmostEqual(runtime._default_wake_threshold(), 0.50)
+        with patch.dict("os.environ", {"COZY_WAKE_THRESHOLD": "0.62"}):
+            self.assertAlmostEqual(runtime._default_wake_threshold(), 0.62)
+
+    def test_command_preroll_and_wake_phrase_cleanup(self):
+        audio = np.arange(32000, dtype=np.int16)
+        np.testing.assert_array_equal(
+            runtime._capture_preroll(audio, 32000, 0.5), audio[-8000:])
+        self.assertEqual(runtime._strip_wake_phrase("Hey Cozy, open Firefox"), "open Firefox")
+        self.assertEqual(runtime._strip_wake_phrase("okay cosy: what time is it"), "what time is it")
+
+    def test_current_stt_prefers_complete_v12_artifacts(self):
+        self.assertEqual(stt.CT2_DIR.name, "cozy_stt_v1.2_ct2_int8")
+        self.assertEqual(stt.HF_DIR.name, "hf_finetuned_v1.2")
+
+    def test_ct2_is_greedy_without_second_vad_cut(self):
+        model = stt.CozySTT()
+        engine = Mock()
+        engine.transcribe.return_value = ([Mock(text=" hello ")], None)
+        with patch.object(model, "_get_ct2", return_value=engine):
+            self.assertEqual(model._run_ct2(np.ones(1600)), "hello")
+        self.assertEqual(engine.transcribe.call_args.kwargs["beam_size"], 1)
+        self.assertFalse(engine.transcribe.call_args.kwargs["vad_filter"])
+
+    def test_tts_keeps_all_generated_segments_and_hashes_cache_keys(self):
+        pipeline = Mock(return_value=iter([
+            (None, None, np.array([1.0, 2.0])),
+            (None, None, np.array([3.0])),
+        ]))
+        with patch.object(tts, "_get_pipeline", return_value=pipeline), \
+             patch.object(tts, "_load_cfg", return_value={"voice": "test", "speed": 1.0}):
+            samples, rate = tts._synthesize("two sentences")
+        np.testing.assert_array_equal(samples, [1.0, 2.0, 3.0])
+        self.assertEqual(rate, 24000)
+        prefix = "same first forty characters exactly here"
+        self.assertNotEqual(tts._cache_path(prefix + " A"), tts._cache_path(prefix + " B"))
+
+    def test_common_commands_have_a_zero_llm_fast_path(self):
+        from rlm_harness.harness_fast import FastHarness
+        cases = {
+            "what time is it": ("time.now", {}),
+            "set volume to 31": ("system.volume.set", {"level": 31}),
+            "Could you put the speakers at thirty seven percent?":
+                ("system.volume.set", {"level": 37}),
+            "I need complete silence from the laptop.": ("system.volume.mute", {}),
+            "Set my display brightness to sixty two.":
+                ("system.brightness.set", {"level": 62}),
+            "Bring up Firefox for me.": ("app.open", {"name": "firefox"}),
+            "Please quit the calculator app.":
+                ("app.close", {"name": "gnome-calculator"}),
+            "Capture what is on my screen right now.": ("screenshot.take", {}),
+            "Resume my music.": ("media.play", {}),
+            "Hold the song where it is.": ("media.pause", {}),
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(FastHarness._rule_tool_call(command), expected)
+        self.assertEqual(FastHarness._rule_tool_call("tell me a story"), ("", {}))
+
+    def test_incomplete_thought_is_never_returned_or_replayed(self):
+        from evaluation import strip_thinking
+        from rlm_harness.harness_fast import HarnessConfig, Trace, Turn
+        from tempfile import TemporaryDirectory
+        self.assertEqual(strip_thinking("<think>a very long unfinished thought"), "")
+        with TemporaryDirectory() as root:
+            cfg = HarnessConfig(
+                state_dir=Path(root), trace_file=Path(root) / "trace.jsonl",
+                max_context_tokens=200)
+            trace = Trace(cfg)
+            trace.append(Turn(role="assistant", content="<think>polluted history"))
+            trace.append(Turn(role="user", content="current request"))
+            messages, _ = trace.build_prompt("system", "tools")
+        rendered = str(messages)
+        self.assertNotIn("polluted history", rendered)
+        self.assertIn("current request", rendered)
 
 if __name__ == '__main__':
     unittest.main()

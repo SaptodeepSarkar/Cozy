@@ -4,23 +4,16 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "tsx src/index.tsx",
+    "start": "node --experimental-ffi src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/*.test.ts src/*.test.tsx",
-    "check": "npm run typecheck && npm test",
-    "preview": "tsx src/preview.tsx"
+    "test": "node --experimental-ffi --experimental-strip-types --test src/*.test.ts",
+    "check": "npm run typecheck && npm test"
   },
   "dependencies": {
-    "ink": "^5.0.0",
-    "react": "^18.3.0",
-    "string-width": "^5.1.2",
-    "wrap-ansi": "^8.1.0"
+    "@opentui/core": "0.5.11"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@types/react": "^18.3.0",
-    "ink-testing-library": "^4.0.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
 }

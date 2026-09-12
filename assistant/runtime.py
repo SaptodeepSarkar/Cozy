@@ -36,7 +36,7 @@ warnings.filterwarnings("ignore", message=r".*unauthenticated requests.*HF Hub.*
 HERE = Path(__file__).resolve().parent
 WW = HERE.parent / "wakeword"
 
-# JSON event emission (used by the Node Ink TUI)
+# JSON event emission (used by the OpenTUI frontend)
 _json_mode = [False]
 _json_out = [None]
 
@@ -85,11 +85,39 @@ def json_cmd():
         return None
 
 
+def _default_wake_threshold() -> float:
+    """Return the room-safe threshold.
+
+    The evaluation set's mathematically optimal threshold is intentionally not
+    used here: it contains balanced clips, while a live microphone sees hours
+    of negatives.  Using 0.31 in production caused frequent phantom wakes.
+    """
+    return float(os.environ.get("COZY_WAKE_THRESHOLD", "0.50"))
+
+
+def _strip_wake_phrase(text: str) -> str:
+    """Remove a wake phrase included by command pre-roll."""
+    return re.sub(
+        r"^\s*(?:(?:hey|hi|okay|ok)\s+)?co[sz]y\b[\s,.:;!\-]*",
+        "", text, count=1, flags=re.IGNORECASE,
+    ).strip()
+
+
+def _capture_preroll(audio_buf, audio_buf_fill: int, seconds: float,
+                     sample_rate: int = 16000):
+    """Return a copy of valid audio immediately preceding wake detection."""
+    available = max(0, min(len(audio_buf), int(audio_buf_fill)))
+    wanted = max(0, min(available, int(seconds * sample_rate)))
+    if wanted == 0:
+        return np.empty(0, dtype=np.int16)
+    return np.asarray(audio_buf[-wanted:], dtype=np.int16).copy()
+
+
 def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False, tts_enabled=True):
     """Run the voice loop and emit NDJSON events to stdout.
 
-    Used by the Node Ink TUI. Skips the textual app entirely.
-    Loads enabled plugins in parallel, listens for the wake word, transcribes
+    Used by the OpenTUI frontend. Skips the textual app entirely.
+    Loads enabled plugins in order, listens for the wake word, transcribes
     the user's command via STT, runs the LLM, executes any tool call,
     speaks the result via TTS, and emits NDJSON events the whole time.
     """
@@ -101,42 +129,45 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         json_emit("error", msg=f"wake model missing: {WW_PATH}")
         return
 
-    # Parallel warmup
+    # Load in a deterministic order. Loading Torch, CTranslate2, ONNX and
+    # Kokoro concurrently caused CPU/GPU/RAM contention and intermittent TTS
+    # initialization failures on the 6 GB target machine.
     load_failures = []
-    def _loader(name):
+    critical_failures = []
+    enabled = [name for name in ("wake", "stt", "llm", "tts")
+               if harness.plugins.get(name) is not None
+               and not (name == "tts" and not tts_enabled)
+               and not (name == "wake" and (not voice or no_wake))
+               and not (name == "stt" and not voice)]
+    for index, name in enumerate(enabled, start=1):
         p_obj = harness.plugins.get(name)
-        if p_obj is None:
-            return
-        # Emit loading state first so the TUI shows ◐
-        json_emit("warmup", model=name, state="loading")
+        started = _time.monotonic()
+        json_emit("warmup", model=name, state="loading", index=index,
+                  total=len(enabled), progress=(index - 1) / max(1, len(enabled)))
         _flush_emit()
         try:
             p_obj.load()
-            json_emit("warmup", model=name, state="done")
+            json_emit("warmup", model=name, state="done", index=index,
+                      total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2),
+                      progress=index / max(1, len(enabled)))
             _flush_emit()
         except Exception as exc:
             load_failures.append(name)
-            json_emit("warmup", model=name, state="failed")
+            if name in {"llm", "stt", "tts"} or (name == "wake" and voice and not no_wake):
+                critical_failures.append(name)
+            json_emit("warmup", model=name, state="failed", index=index,
+                      total=len(enabled), elapsed_s=round(_time.monotonic() - started, 2))
             json_emit("error", msg=f"{name} load: {exc}")
             _flush_emit()
-
-    threads = []
-    for name in ("wake", "stt", "llm", "tts"):
-        t = threading.Thread(target=_loader, args=(name,), daemon=True)
-        t.start()
-        threads.append(t)
-    # Wait for enabled models before accepting commands.
-    for t in threads:
-        t.join(timeout=60)
-    if any(t.is_alive() for t in threads) or load_failures:
-        json_emit("error", msg="Model startup did not complete: " + ", ".join(load_failures or ["timeout"]))
+            break
+    if critical_failures:
+        json_emit("startup_failed", models=critical_failures,
+                  msg="Model startup failed: " + ", ".join(critical_failures))
         for plugin in reversed(list(harness.plugins.values())):
             try:
                 plugin.free()
             except Exception:
                 pass
-        if any(t.is_alive() for t in threads):
-            os._exit(1)
         return
 
     # Reuse the warmed plugin objects. The old path created a second wake
@@ -213,7 +244,12 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                 json_emit("done", text=reply, dt=_time.time() - t0)
             elif name:
                 json_emit("llm", tool=name, args=str(args)[:60], dt=dt)
-                result = executor(name, args or {})
+                if name == "rlm.delegate":
+                    from rlm_harness.rlm import execute_delegate
+                    delegated = execute_delegate(args or {}, harness)
+                    result = {"ok": True, "output": delegated}
+                else:
+                    result = executor(name, args or {})
                 output = str(result.get("output", ""))
                 if result.get("ok"):
                     reply = output or "Done."
@@ -230,6 +266,11 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                 json_emit("done", text=reply, dt=_time.time() - t0)
         except Exception as exc:
             json_emit("error", msg=f"command failed: {exc}")
+            reply = "I hit an internal error. Please try that once more."
+            if tts_enabled and is_available():
+                json_emit("tts", text=reply)
+                tts_speak(reply)
+            json_emit("done", text=reply)
         finally:
             command_lock.release()
 
@@ -262,6 +303,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         audio_buf_fill = 0
         samples_since_score = 0
         cooldown_until = 0.0
+        wake_hits = 0
         next_health_check = 0.0
         muted = None
         with PipeWireInputStream(samplerate=SR, channels=1, dtype="int16",
@@ -303,7 +345,15 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                     score = float(scores[wake_name])
                 json_emit("wake_score", score=score)
                 if score < threshold:
+                    wake_hits = 0
                     continue
+                wake_hits += 1
+                # A single marginal score is not enough to interrupt the
+                # user. Two adjacent 2 s rolling-window scores are required;
+                # an exceptionally strong score can still trigger at once.
+                if wake_hits < 2 and score < 0.85:
+                    continue
+                wake_hits = 0
                 cooldown_until = _time.time() + 4.0
                 json_emit("wake", score=score)
                 # Capture 7s + VAD
@@ -330,16 +380,21 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         import soundfile as sf
         from pathlib import Path as _P
         json_emit("stt_start")
-        # The rolling wake window contains "hey cozy" and ambient noise;
-        # only post-wake audio should be sent to STT.
-        frames = []
+        # Keep a short pre-roll because the 2-second wake classifier may fire
+        # after the user has already started the command. The recognized wake
+        # phrase is stripped from the transcript below.
+        pre_roll = max(0.0, min(1.5, float(os.environ.get("COZY_COMMAND_PREROLL", "0.8"))))
+        initial = _capture_preroll(audio_buf, audio_buf_fill, pre_roll)
+        frames = [initial] if initial.size else []
         levels = []
         silent_for = 0.0
         spoken = False
-        min_capture = float(os.environ.get("COZY_CAPTURE_MIN", "0.8"))
-        max_capture = float(os.environ.get("COZY_CAPTURE_TIMEOUT", "6"))
-        silence_after = float(os.environ.get("COZY_SILENCE_AFTER", "0.7"))
-        speech_floor = float(os.environ.get("COZY_SPEECH_RMS", "140"))
+        voiced_seconds = 0.0
+        min_capture = max(0.3, float(os.environ.get("COZY_CAPTURE_MIN", "0.55")))
+        max_capture = max(min_capture, float(os.environ.get("COZY_CAPTURE_TIMEOUT", "10")))
+        silence_after = max(0.55, float(os.environ.get("COZY_SILENCE_AFTER", "0.80")))
+        speech_start_timeout = max(0.7, float(os.environ.get("COZY_SPEECH_START_TIMEOUT", "1.20")))
+        speech_floor = max(80.0, float(os.environ.get("COZY_SPEECH_RMS", "160")))
         if vad_model is not None and hasattr(vad_model, "reset_states"):
             vad_model.reset_states()
         t0 = _time.time()
@@ -373,17 +428,26 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                 # timeout without ever marking speech as started.
                 if (chunk_vad_speech >= 1) or level >= speech_floor:
                     spoken = True
+                    voiced_seconds += len(pcm) / 16000
                     silent_for = 0.0
                 elif spoken and (vad_model is None or chunk_vad_quiet >= 1):
                     silent_for += len(pcm) / 16000
             if spoken and (_time.time() - t0) >= min_capture and silent_for >= silence_after:
+                break
+            if not spoken and (_time.time() - t0) >= speech_start_timeout:
                 break
         pcm = np.concatenate(frames) if frames else np.zeros(16000, np.int16)
         energy = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) if pcm.size else 0.0
         peak = int(np.max(np.abs(pcm))) if pcm.size else 0
         clipped = float(np.mean(np.abs(pcm) >= 32760)) if pcm.size else 0.0
         json_emit("audio_profile", rms=round(energy, 1), peak=peak, clipped=round(clipped, 4), noise=round(float(np.median(levels[:5])) if levels else 0.0, 1))
-        if energy < 45:
+        # Never send silence/noise to Whisper: generative STT models can turn
+        # it into fluent-looking sentences. Require verified post-wake speech,
+        # not merely energy in the pre-roll containing the wake phrase.
+        if not spoken or voiced_seconds < 0.16:
+            json_emit("rejected", reason="No speech detected after wake word")
+            return ""
+        if energy < 80:
             json_emit("rejected", reason=f"low energy ({energy:.0f})")
             return ""
         fd, tmp_name = tempfile.mkstemp(prefix="cozy_cmd_", suffix=".wav")
@@ -401,7 +465,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         finally:
             try: tmp.unlink()
             except OSError: pass
-        text = (text or "").strip()
+        text = _strip_wake_phrase((text or "").strip())
         if len(text) < 3:
             json_emit("rejected", reason="STT returned no speech")
             return ""
@@ -605,7 +669,7 @@ def _strip_special(text):
     text = re.sub(r"<\|im_start\|>", "", text)
     text = re.sub(r"<\|endoftext\|>", "", text)
     # Strip any residual think blocks
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+    text = re.sub(r"<think>.*?(?:</think>|$)", "", text, flags=re.S)
     return text.strip()
 
 
@@ -864,7 +928,7 @@ def main() -> None:
     # Default (no flags) AND we have a TTY: launch the textual TUI with
     # voice listening. This is the one-liner `cozy` that the user wants.
     # --json-events: run the voice loop and emit NDJSON to stdout.
-    # The Node Ink TUI consumes this. No textual app overhead.
+    # The OpenTUI frontend consumes this. No textual app overhead.
     if args.json_events:
         from rlm_harness.harness_fast import FastHarness, HarnessConfig
         from executor import execute as executor_execute
@@ -876,7 +940,10 @@ def main() -> None:
         # These plugins are owned by the continuous runtime until shutdown.
         cfg.idle_unload_s = float("inf")
         h = FastHarness(cfg)
-        run_json_mode(h, executor_execute, args.threshold if args.threshold is not None else 0.5,
+        threshold = args.threshold if args.threshold is not None else _default_wake_threshold()
+        if not 0.0 <= threshold <= 1.0:
+            parser.error("--threshold must be between 0 and 1")
+        run_json_mode(h, executor_execute, threshold,
                       voice=not args.text, no_wake=args.no_wake, tts_enabled=not args.no_tts)
         return
 
@@ -900,7 +967,7 @@ def main() -> None:
         h = FastHarness(cfg)
         # Threshold: use the eval-optimal 0.5, not the over-sensitive 0.30
         # that caused the false-positive wake fires in the earlier build.
-        threshold = 0.5
+        threshold = _default_wake_threshold()
         if not args.no_tts and hasattr(args, "no_tts"):
             pass  # threshold tunable in voice.cfg in a future revision
         run_textual(h, executor_execute, voice_mode=True, threshold=threshold)
@@ -917,17 +984,11 @@ def main() -> None:
 
     # Default threshold comes from the trained model's eval JSON
     # (AUT/FPPH/recall-optimal threshold computed during livekit training)
-    metrics_file = WW / "output" / "hey_cozy" / "hey_cozy_eval.json"
     threshold = args.threshold
     if threshold is None:
-        threshold = 0.5
-        if metrics_file.exists():
-            try:
-                metrics = json.loads(metrics_file.read_text())
-                if metrics.get("threshold"):
-                    threshold = float(metrics["threshold"])
-            except Exception:
-                pass
+        threshold = _default_wake_threshold()
+    if not 0.0 <= threshold <= 1.0:
+        parser.error("--threshold must be between 0 and 1")
     print("[config] threshold =", threshold)
 
     # --calibrate: print live wake scores for 30s
@@ -968,7 +1029,7 @@ def main() -> None:
     # The TUI needs a TTY; if stdin is not a TTY, fall through to the
     # legacy input() loop (which exits cleanly on EOF).
     if args.json_events:
-        # The Node Ink TUI consumes NDJSON on stdout. It provides its
+        # The OpenTUI frontend consumes NDJSON on stdout. It provides its
         # own raw-mode terminal handling, so the runtime doesn't need
         # a TTY to operate.
         from rlm_harness.harness_fast import FastHarness, HarnessConfig

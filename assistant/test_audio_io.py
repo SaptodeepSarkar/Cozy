@@ -8,6 +8,15 @@ import audio_io
 
 
 class AudioRouteTests(unittest.TestCase):
+    @patch.object(audio_io.subprocess, "run")
+    @patch.object(audio_io, "playback_sink", return_value="test-sink")
+    def test_playback_reaches_paplay_with_duration_timeout(self, _sink, run):
+        import numpy as np
+        run.return_value.returncode = 0
+        audio_io.play(np.zeros(2400, dtype=np.float32), 24000)
+        self.assertEqual(run.call_args.args[0][0], "paplay")
+        self.assertGreaterEqual(run.call_args.kwargs["timeout"], 10.0)
+
     @patch.object(audio_io, "pipewire_defaults",
                   return_value=("alsa_input.internal", "bluez_output.headset"))
     def test_non_bluetooth_default_is_respected(self, _defaults):

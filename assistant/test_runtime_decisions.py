@@ -15,10 +15,16 @@ class DecisionRecoveryTests(unittest.TestCase):
         harness.plugins = {'llm': llm}
         return harness
 
-    def test_none_retries_once_and_accepts_exact_parameterless_tool(self):
+    def test_rule_fast_path_skips_generation_for_common_commands(self):
         h = self.harness(['none', 'time.now'])
         with patch('cozy_log.log_event'):
             self.assertEqual(h.decide('what time is it'), ('time.now', {}))
+        self.assertEqual(h.plugins['llm'].generate.call_count, 0)
+
+    def test_none_retries_once_and_accepts_exact_parameterless_tool(self):
+        h = self.harness(['none', 'time.now'])
+        with patch('cozy_log.log_event'):
+            self.assertEqual(h.decide('please use the clock tool'), ('time.now', {}))
         self.assertEqual(h.plugins['llm'].generate.call_count, 2)
 
     def test_repeated_none_produces_readable_failure(self):
@@ -31,3 +37,9 @@ class DecisionRecoveryTests(unittest.TestCase):
         h = self.harness(['system.volume.set'])
         with patch('cozy_log.log_event'):
             self.assertEqual(h.decide('change volume'), ('', {}))
+
+    def test_hidden_executor_handler_is_not_model_authority(self):
+        h = self.harness(['<tool_call>{"name":"system.shutdown","arguments":{"confirm":true}}</tool_call>'])
+        with patch('cozy_log.log_event'):
+            self.assertEqual(h.decide('do something unsafe'), ('', {}))
+        self.assertIn("safely map", h.trace.append.call_args.args[0].content)

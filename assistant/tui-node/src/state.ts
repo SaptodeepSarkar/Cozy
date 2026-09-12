@@ -1,5 +1,5 @@
-import type { EngineEvent, ModelName, ModelState } from "./protocol.js";
-import { numberField, textField } from "./protocol.js";
+import type { EngineEvent, ModelName, ModelState } from "./protocol.ts";
+import { numberField, textField } from "./protocol.ts";
 
 export type Phase = "starting" | "ready" | "listening" | "capturing" | "transcribing" | "thinking" | "speaking" | "error";
 
@@ -14,6 +14,11 @@ export interface CozyState {
   transcript: string;
   response: string;
   fatalError: string;
+  loadingModel: ModelName | "";
+  loadingStartedAt: number;
+  modelElapsed: Partial<Record<ModelName, number>>;
+  startupProgress: number;
+  hasStarted: boolean;
 }
 
 export const initialState: CozyState = {
@@ -27,6 +32,11 @@ export const initialState: CozyState = {
   transcript: "",
   response: "",
   fatalError: "",
+  loadingModel: "",
+  loadingStartedAt: 0,
+  modelElapsed: {},
+  startupProgress: 0,
+  hasStarted: false,
 };
 
 const loggedKinds = new Set([
@@ -47,18 +57,29 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
       const model = textField(event, "model") as ModelName;
       const modelState = textField(event, "state") as ModelState;
       if (!(model in state.models) || !["pending", "loading", "done", "failed"].includes(modelState)) return state;
-      return { ...state, models: { ...state.models, [model]: modelState } };
+      const elapsed = numberField(event, "elapsed_s");
+      const progress = numberField(event, "progress");
+      return {
+        ...state,
+        models: { ...state.models, [model]: modelState },
+        loadingModel: modelState === "loading" ? model : state.loadingModel === model ? "" : state.loadingModel,
+        loadingStartedAt: modelState === "loading" ? event.ts : state.loadingStartedAt,
+        modelElapsed: modelState === "done" || modelState === "failed"
+          ? { ...state.modelElapsed, [model]: elapsed }
+          : state.modelElapsed,
+        startupProgress: Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : state.startupProgress,
+      };
     }
     case "ready":
-      return { ...state, phase: "ready", fatalError: "", voiceEnabled: typeof event.voice === "boolean" ? event.voice : state.voiceEnabled };
+      return { ...state, phase: "ready", fatalError: "", hasStarted: true, voiceEnabled: typeof event.voice === "boolean" ? event.voice : state.voiceEnabled };
     case "audio_status":
       return { ...state, micMuted: typeof event.muted === "boolean" ? event.muted : null };
     case "wake_score":
       return state; // Wake confidence is not microphone amplitude.
     case "wake":
-      return withEvent({ ...state, phase: "listening", audioHistory: [], audioLevel: 0, transcript: "", response: "" }, event);
+      return withEvent({ ...state, phase: "listening", audioHistory: [], audioLevel: 0, transcript: "" }, event);
     case "stt_start":
-      return { ...state, phase: "capturing", transcript: "Listening…", response: "" };
+      return { ...state, phase: "capturing", transcript: "Listening…" };
     case "capture_level": {
       const raw = numberField(event, "level");
       const level = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
@@ -79,8 +100,12 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
       return { ...state, phase: "thinking", response: textField(event, "text") };
     case "tts":
       return { ...state, phase: "speaking", response: textField(event, "text") || state.response };
+    case "tts_start":
+      return { ...state, phase: "speaking" };
+    case "tts_done":
+      return { ...state, phase: "ready", audioLevel: 0 };
     case "done":
-      return withEvent({ ...state, phase: "ready", response: textField(event, "text"), audioLevel: 0 }, event);
+      return withEvent({ ...state, phase: state.phase === "speaking" ? "speaking" : "ready", response: textField(event, "text"), audioLevel: 0 }, event);
     case "rejected":
       return withEvent({ ...state, phase: "ready", audioLevel: 0 }, event);
     case "tool_result":
@@ -88,7 +113,13 @@ export function reduceEvent(state: CozyState, event: EngineEvent): CozyState {
     case "tool_error":
       return withEvent(state, event);
     case "error":
-      return withEvent({ ...state, phase: "error" }, event);
+      // Runtime errors are recoverable and remain in the conversation. Only
+      // a backend crash makes the whole interface enter the fatal state.
+      return withEvent(state, event);
+    case "startup_failed": {
+      const message = textField(event, "msg") || "A required model could not be initialized.";
+      return withEvent({ ...state, phase: "error", fatalError: message }, event);
+    }
     case "backend_crash": {
       const message = textField(event, "message") || "The assistant engine stopped unexpectedly.";
       return withEvent({ ...state, phase: "error", fatalError: message }, event);

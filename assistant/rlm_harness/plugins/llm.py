@@ -135,7 +135,10 @@ class LLMPlugin(Plugin):
             if errors:
                 raise RuntimeError("LLM generation failed") from errors[0]
             text = "".join(chunks).strip()
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+        # A generation capped mid-thought has no closing tag. Strip through
+        # end-of-output as well, otherwise the monologue pollutes history and
+        # can be spoken to the user.
+        text = re.sub(r"<think>.*?(?:</think>|$)", "", text, flags=re.S).strip()
         text = re.sub(r"<\|(?:im_end|endoftext)\|>", "", text).strip()
         self.touch()
         return text

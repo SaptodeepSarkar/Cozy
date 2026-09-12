@@ -38,7 +38,9 @@ def _which_any(*names):
 
 
 def system_volume_set(params):
-    level = max(0, min(100, int(params.get("level", 50))))
+    if "level" not in params:
+        return False, "volume level is required"
+    level = max(0, min(100, int(params["level"])))
     f = level / 100.0
     # PipeWire (Arch default), then PulseAudio compat, then ALSA fallback.
     ok, out = _run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{f:.2f}"])
@@ -60,7 +62,9 @@ def system_volume_mute(params=None):
 
 
 def system_brightness_set(params):
-    level = max(1, min(100, int(params.get("level", 50))))
+    if "level" not in params:
+        return False, "brightness level is required"
+    level = max(1, min(100, int(params["level"])))
     tool = _which_any("brightnessctl")
     if tool:
         return _run([tool, "set", str(level) + "%"])
@@ -82,7 +86,7 @@ APP_ALIASES = {
     "files": ["nautilus", "thunar", "dolphin", "nemo", "pcmanfm"],
     "terminal": ["gnome-terminal", "kgx", "x-terminal-emulator",
                  "konsole", "xfce4-terminal", "alacritty", "kitty", "foot"],
-    "calculator": ["gnome-calculator", "kcalc", "qalculate-gtk", "kate"],
+    "calculator": ["gnome-calculator", "kcalc", "qalculate-gtk"],
     "settings": ["gnome-control-center", "systemsettings",
                  "xfce4-settings-manager"],
     "notes": ["gnome-text-editor", "gedit", "kate", "mousepad", "xed"],
@@ -108,8 +112,7 @@ def resolve_app(name):
         for line in probe.stdout.splitlines():
             if name_l.replace(" ", "") in line.replace(".", "").lower():
                 return [flatpak, "run", line.strip()]
-    xdg = _which_any("xdg-open")
-    return [xdg or "xdg-open", name]
+    return None
 
 
 def app_open(params):
@@ -117,6 +120,8 @@ def app_open(params):
     if not name:
         return False, "no app name"
     cmd = resolve_app(name)
+    if cmd is None:
+        return False, "application not found: " + name
     try:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
@@ -165,13 +170,17 @@ def screenshot_take(params=None):
         tool = _which_any(cand)
         if tool:
             if cand == "grim":
-                return _run([tool, out], timeout=20), out
+                ok, error = _run([tool, out], timeout=20)
+                return (True, out) if ok else (False, error)
             if cand == "gnome-screenshot":
-                return _run([tool, "-f", out], timeout=20), out
+                ok, error = _run([tool, "-f", out], timeout=20)
+                return (True, out) if ok else (False, error)
             if cand == "scrot":
-                return _run([tool, out], timeout=20), out
+                ok, error = _run([tool, out], timeout=20)
+                return (True, out) if ok else (False, error)
             if cand == "import":
-                return _run([tool, "-window", "root", out], timeout=20), out
+                ok, error = _run([tool, "-window", "root", out], timeout=20)
+                return (True, out) if ok else (False, error)
     return False, "no screenshot tool (install grim)"
 
 

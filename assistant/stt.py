@@ -6,12 +6,15 @@ Usage:
     text = stt.transcribe_array(samples_16k_float32)   # or .transcribe_file(path)
 """
 import ctypes
+import os
 import sys
 from pathlib import Path
 
 STT_ROOT = Path(__file__).resolve().parent.parent / "stt-finetune"
-CT2_DIR = STT_ROOT / "output" / "cozy_stt_v1_ct2_int8"
-HF_DIR = STT_ROOT / "output" / "hf_finetuned"
+_CT2_V12 = STT_ROOT / "output" / "cozy_stt_v1.2_ct2_int8"
+_HF_V12 = STT_ROOT / "output" / "hf_finetuned_v1.2"
+CT2_DIR = _CT2_V12 if (_CT2_V12 / "model.bin").exists() else STT_ROOT / "output" / "cozy_stt_v1_ct2_int8"
+HF_DIR = _HF_V12 if (_HF_V12 / "model.safetensors").exists() else STT_ROOT / "output" / "hf_finetuned"
 
 sys.path.insert(0, str(STT_ROOT / "scripts"))
 
@@ -90,7 +93,8 @@ class CozySTT:
             raise ValueError("audio must be finite mono samples at 16 kHz")
         if not audio.size or not np.any(audio):
             return ""
-        self._language = None if hinglish_hint else "en"
+        configured_language = os.environ.get("COZY_STT_LANGUAGE", "en").strip()
+        self._language = None if hinglish_hint or configured_language.lower() == "auto" else configured_language
         if self.prefer in ("auto", "ct2") and CT2_DIR.exists():
             try:
                 text = self._run_ct2(audio)
@@ -145,8 +149,11 @@ class CozySTT:
     # ---- internals -----------------------------------------------------
     def _run_ct2(self, audio):
         model = self._get_ct2()
-        segs, _ = model.transcribe(audio, language=getattr(self, "_language", "en"), beam_size=3,
-                                   condition_on_previous_text=False, vad_filter=True)
+        # Capture already performs endpointing. A second VAD pass here can
+        # remove quiet first/last words, and beam=3 adds avoidable latency for
+        # short desktop commands.
+        segs, _ = model.transcribe(audio, language=getattr(self, "_language", "en"), beam_size=1,
+                                   condition_on_previous_text=False, vad_filter=False)
         return " ".join(s.text.strip() for s in segs).strip()
 
     def _run_hf(self, audio):

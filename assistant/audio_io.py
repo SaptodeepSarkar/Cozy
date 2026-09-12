@@ -168,9 +168,16 @@ def play(samples, samplerate: int) -> None:
         sf.write(str(temporary), samples, samplerate)
         audio_path = temporary
     try:
+        # The previous timeout patch accidentally referenced names from the
+        # TTS wrapper (`data`/`sr`) that do not exist in this function, so
+        # every real playback failed before paplay was started.
+        try:
+            duration = float(sf.info(str(audio_path)).duration)
+        except Exception:
+            duration = 0.0
         result = subprocess.run(
             ["paplay", f"--device={playback_sink()}", str(audio_path)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, timeout=max(10.0, duration + 5.0))
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "PipeWire playback failed")
     finally:

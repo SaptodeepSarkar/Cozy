@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { initialState, reduceEvent } from "./state.js";
+import { initialState, reduceEvent } from "./state.ts";
 
 test("warmup and ready events update the pipeline", () => {
   const loading = reduceEvent(initialState, { kind: "warmup", model: "llm", state: "loading", ts: 1 });
@@ -14,6 +14,21 @@ test("a completed answer returns the UI to ready", () => {
   const done = reduceEvent(thinking, { kind: "done", text: "Hi!", ts: 2 });
   assert.equal(done.phase, "ready");
   assert.equal(done.response, "Hi!");
+});
+
+test("queued speech stays visible until playback really finishes", () => {
+  let state = reduceEvent(initialState, { kind: "tts", text: "Hi!", ts: 1 });
+  state = reduceEvent(state, { kind: "done", text: "Hi!", ts: 2 });
+  assert.equal(state.phase, "speaking");
+  state = reduceEvent(state, { kind: "tts_done", ts: 3 });
+  assert.equal(state.phase, "ready");
+});
+
+test("recoverable errors are logged without making the composer look dead", () => {
+  const ready = reduceEvent(initialState, { kind: "ready", ts: 1 });
+  const failed = reduceEvent(ready, { kind: "error", msg: "TTS unavailable", ts: 2 });
+  assert.equal(failed.phase, "ready");
+  assert.equal(failed.events.at(-1)?.kind, "error");
 });
 
 test("STT inference remains visibly active after capture", () => {
@@ -47,6 +62,20 @@ test("typed backend echo is deduplicated and responses persist in conversation",
   const done = reduceEvent(heard, { kind: "done", text: "Hi!", ts: 3 });
   const next = reduceEvent(done, { kind: "heard", text: "time?", ts: 4 });
   assert.equal(next.events[1].text, "Hi!");
+});
+
+test("a false wake does not erase the previous answer", () => {
+  const answered = reduceEvent(initialState, { kind: "done", text: "Previous answer", ts: 1 });
+  const listening = reduceEvent(answered, { kind: "wake", score: 0.9, ts: 2 });
+  assert.equal(listening.response, "Previous answer");
+  assert.equal(listening.events.at(-1)?.text, "Previous answer");
+});
+
+test("startup progress records elapsed model initialization time", () => {
+  const loading = reduceEvent(initialState, { kind: "warmup", model: "tts", state: "loading", progress: 0.75, ts: 10 });
+  const done = reduceEvent(loading, { kind: "warmup", model: "tts", state: "done", elapsed_s: 2.4, progress: 1, ts: 12.4 });
+  assert.equal(done.startupProgress, 1);
+  assert.equal(done.modelElapsed.tts, 2.4);
 });
 
 test("muted microphones are visible without blocking typed commands", () => {
