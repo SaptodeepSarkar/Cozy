@@ -9,4 +9,4 @@ Icon=@COZY_ICON@
 Terminal=false
 Categories=Utility;Accessibility;
 StartupNotify=true
-StartupWMClass=com.nousresearch.hermes
+StartupWMClass=com.cozyassistant.cozy

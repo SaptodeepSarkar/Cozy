@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cozy is a thin voice-first launcher around the Hermes Agent desktop.
+# Cozy is the voice-first desktop assistant, powered by the Hermes runtime.
 set -euo pipefail
 
 SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || realpath "$0")"
@@ -18,11 +18,11 @@ fi
 case "${1:-}" in
   --help|-h)
     cat <<'EOF'
-Usage: cozy [--desktop|--cli|--status|--help] [Hermes arguments...]
+Usage: cozy [--desktop|--cli|--status|--help] [Cozy options...]
 
-  cozy             Open the Cozy-branded Hermes desktop (voice-first).
-  cozy --cli       Start Hermes chat with computer-use tools enabled.
-  cozy --status    Run Hermes diagnostics.
+  cozy             Open the Cozy desktop assistant.
+  cozy --cli       Talk to Cozy in the terminal with computer-use tools enabled.
+  cozy --status    Check Cozy's runtime and model setup.
   cozy --desktop   Explicitly open the desktop.
 EOF
     ;;
