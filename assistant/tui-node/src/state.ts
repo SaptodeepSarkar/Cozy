@@ -47,7 +47,7 @@ export const initialState: CozyState = {
 
 const loggedKinds = new Set([
   "backend_crash", "error", "heard", "llm", "rejected",
-  "tool_error", "tool_fail", "tool_result", "user_msg", "audio_profile", "done",
+  "tool_error", "tool_fail", "tool_result", "user_msg", "audio_profile", "thinking", "done",
 ]);
 
 const withEvent = (state: CozyState, event: EngineEvent): CozyState =>

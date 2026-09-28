@@ -239,3 +239,138 @@ the LLM is resident. If the larger base competes with voice models, use the
 5. Test FoxMCP with Firefox open and its extension enabled.
 6. Record model ID, adapter path, metrics, VRAM peak, and known failures.
 7. Only then update defaults or commit source/documentation changes.
+
+## Execution record (2026-09-13)
+
+- Existing run inspected: `assistant/model/sft_v2_runs/checkpoint-600/`.
+- Base: `Qwen/Qwen3-0.6B`; adapter configuration is compatible with the
+  checked-in Qwen3-0.6B model and uses LoRA rank 16 / alpha 32.
+- Reported validation metrics: `eval_loss=0.03591` and
+  `eval_mean_token_accuracy=0.9877` at step 600.
+- Repository checks passed: 50 unit tests and the 20-task rule backend smoke
+  evaluation.
+- Dataset audit: all 3,550 rows contain valid JSON and all 3,230 tool calls
+  reference known Cozy tools with valid JSON arguments. The rows do not all
+  embed the complete 37-tool schema; most contain only the relevant tool.
+  This remains a handoff gap and should be addressed in a separate data
+  migration/retraining run because expanding every prompt changes the
+  training context distribution.
+- Behavioral smoke test of the current Qwen3-0.6B merged model plus
+  `assistant/model/cozy-llm-v1-adapter/` on CPU produced 0 parsed tool calls in
+  7 completed tasks and malformed text outputs. The adapter is rejected for
+  activation until a corrected training/evaluation run is available.
+- No protected wake-word/STT artifacts, private `.env` files, or existing
+  model directories were modified by this audit.
+
+## Qwen2.5-3B QLoRA run (2026-09-13)
+
+- Base downloaded locally at `assistant/model/bases/qwen2.5-3b-instruct/`.
+- New adapter: `assistant/model/adapters/qwen2.5-3b-cozy-tools-v1/`.
+- Training run: `assistant/model/runs/qwen2.5-3b-cozy-tools-v1/`, 400 steps,
+  two epochs, NF4, LoRA rank 16 / alpha 32, effective batch size 16.
+- Training metrics: `eval_loss=0.03663`,
+  `eval_mean_token_accuracy=0.98729`, peak GPU memory `4310.5 MB`, wall time
+  approximately 10.4 hours under concurrent GPU use.
+- Deployment-matched NF4 smoke evaluation: 19/20 parsed tool calls (95%).
+- Known evaluation failures: `who are you` was incorrectly routed to
+  `system.info`, and `music roko` was incorrectly routed to
+  `system.volume.set`. The adapter is not activated as the runtime default.
+
+## Current agent integration (2026-09-13)
+
+- With `OPENROUTER_API` set, the runtime uses
+  `inclusionai/ling-3.0-flash-vl:free` (override with
+  `COZY_OPENROUTER_MODEL`). The local Qwen2.5-3B adapter is not silently
+  substituted for this cloud planner.
+- `media.control` is the single advertised media interface. It accepts an
+  action such as `status`, `play`, `pause`, `next`, or `previous`, plus an
+  optional MPRIS player name. The old `media.play`/`pause`/`next`/`previous`
+  handlers remain only as compatibility aliases.
+- `app.focus` checks existing Hyprland, wmctrl, and xdotool windows before it
+  opens an application, preventing duplicate launches. The planner prompt
+  requires inspecting each tool result before selecting another step.
+- The UI final response is the concise generated action summary; raw terminal,
+  MCP, and browser events remain available as activity events while the task
+  runs. It no longer prefixes the final response with `Detailed report:`.
+- Media status/control requires `playerctl` and MPRIS support on the laptop.
+  The current environment does not have `playerctl` installed, so media
+  control will report that dependency until it is installed.
+
+## Mandatory corrective task for the next agent
+
+The previous handoff audit was not a model-training task. It inspected the
+existing Qwen3-0.6B checkpoints and ran evaluations. It did **not** download
+or fine-tune a new 3B or 7B model. Do not describe that audit as training.
+
+The next agent must complete an actual larger-model QLoRA experiment and leave
+evidence. "Three-million parameter" is not the target; the target is a
+**3-billion or 7-billion parameter** instruction model that fits the laptop
+budget in 4-bit inference.
+
+### Required work
+
+1. Check CUDA and available VRAM with `nvidia-smi` and record the result.
+2. Download a real base model from Hugging Face. Start with
+   `Qwen/Qwen2.5-3B-Instruct` for the reliable 6 GB profile. If VRAM allows,
+   also test `Qwen/Qwen2.5-7B-Instruct` with NF4 QLoRA. Do not use the local
+   Qwen3-0.6B directory for this experiment.
+3. Download at least one openly licensed tool-use dataset from Hugging Face,
+   record its exact dataset ID, revision, and license, and save it outside git
+   or under an ignored directory. Suitable candidates include a
+   ToolBench/ToolAlpaca-style function-calling dataset or another verified
+   browser/tool-use dataset.
+4. Generate additional Cozy traces with:
+
+   ```bash
+   bash rlm.sh dataset --limit 100
+   ```
+
+   Convert all imported and generated examples into Cozy's `{messages, tools}`
+   JSONL format. Use the current `team/tool_schema.json`, exact tool names,
+   valid JSON arguments, tool results, failures, recovery turns, and final
+   summaries. Remove secrets and personal data.
+5. Create a deterministic train/validation split and report row counts,
+   tool-call counts, and validation leakage checks.
+6. Run the actual adapter-only QLoRA trainer, for example:
+
+   ```bash
+   COZY_AGENT_BASE=Qwen/Qwen2.5-3B-Instruct \
+   COZY_AGENT_ADAPTER_OUT="$PWD/assistant/model/adapters/qwen2.5-3b-cozy-tools-v1" \
+   bash train_agent_qlora.sh
+   ```
+
+   For a 7B experiment, use a separate output directory:
+
+   ```bash
+   COZY_AGENT_BASE=Qwen/Qwen2.5-7B-Instruct \
+   COZY_AGENT_ADAPTER_OUT="$PWD/assistant/model/adapters/qwen2.5-7b-cozy-tools-v1" \
+   bash train_agent_qlora.sh
+   ```
+
+6. Do not fake completion with an existing checkpoint, a dry run, or an
+   evaluation-only command. The output must contain a newly written
+   `adapter_model.safetensors`, `adapter_config.json`, tokenizer files,
+   training metrics, and the full training log. The adapter must remain
+   separate from the frozen base.
+7. Load the newly trained adapter against its matching base and run held-out
+   tests for local tools, `browser.mcp`, `mcp.call`, multi-step workflows,
+   malformed arguments, tool failures, and detailed final summaries.
+8. Record the model download, dataset download, training start/end times,
+   steps, epochs, loss, validation metrics, peak VRAM, adapter size, and exact
+   activation environment variables in a new execution record.
+
+### Acceptance criteria
+
+The task is incomplete unless the next agent can show:
+
+- Base model ID and downloaded model metadata for a 3B or 7B model.
+- Hugging Face dataset ID, revision, license, and transformed row counts.
+- A real QLoRA training log with nonzero steps and a newly created adapter.
+- Adapter output stored under `assistant/model/adapters/<model>-<run>/`.
+- A matching-base smoke test that emits parseable Cozy tool calls.
+- Comparison against the old Qwen3-0.6B adapter.
+- No protected wake word/STT files or private files staged.
+
+If CUDA, network access, disk space, or the Hugging Face dataset license
+blocks the experiment, report the exact blocker and stop. Do not substitute
+the old 0.6B artifacts and do not claim that training was completed.

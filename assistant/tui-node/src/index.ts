@@ -7,6 +7,9 @@ import {
   ScrollBoxRenderable,
   StyledText,
   TextRenderable,
+  bold as styledBold,
+  italic as styledItalic,
+  underline as styledUnderline,
   createCliRenderer,
   type CliRenderer,
   type TextChunk,
@@ -145,8 +148,8 @@ const blue = RGBA.fromHex(colors.blue);
 const peach = RGBA.fromHex(colors.peach);
 const red = RGBA.fromHex(colors.red);
 
-function chunk(text: string, fg: RGBA = muted): TextChunk {
-  return { __isChunk: true, text, fg };
+function chunk(text: string, fg: RGBA = muted, attributes?: number): TextChunk {
+  return { __isChunk: true, text, fg, ...(attributes === undefined ? {} : { attributes }) };
 }
 
 const renderer: CliRenderer = await createCliRenderer({ exitOnCtrlC: true, useMouse: true });
@@ -243,6 +246,8 @@ const conversationText = new TextRenderable(renderer, { content: "Ready when you
 conversation.add(conversationText);
 col.add(conversation);
 
+let reasoningExpanded = false;
+
 col.add(new TextRenderable(renderer, { content: SEP, fg: colors.track, height: 1 }));
 const composer = new BoxRenderable(renderer, {
   width: "100%", height: 1, flexDirection: "row", alignItems: "center",
@@ -254,7 +259,7 @@ const input = new InputRenderable(renderer, {
 });
 composer.add(input);
 col.add(composer);
-col.add(new TextRenderable(renderer, { content: "enter send  •  ctrl+c quit", fg: colors.faint, height: 1 }));
+col.add(new TextRenderable(renderer, { content: "enter send  •  ctrl+r reasoning  •  ctrl+c quit", fg: colors.faint, height: 1 }));
 
 const sidebar = new BoxRenderable(renderer, {
   width: 32, height: "100%", flexDirection: "column", gap: 1,
@@ -300,26 +305,83 @@ function friendlyTool(name: string): string {
   return names[name] || name.replaceAll(".", " ");
 }
 
+function styledInline(text: string, base: RGBA): TextChunk[] {
+  const chunks: TextChunk[] = [];
+  const token = /(`[^`]+`|\*\*.+?\*\*|__.+?__|\*[^*]+\*|_[^_]+_|~~.+?~~|\[[^\]]+\]\([^\)]+\))/g;
+  let last = 0;
+  for (const match of text.matchAll(token)) {
+    const value = match[0];
+    const start = match.index ?? 0;
+    if (start > last) chunks.push(chunk(text.slice(last, start), base));
+    if (value.startsWith("`") && value.endsWith("`")) {
+      chunks.push(chunk(value.slice(1, -1), green));
+    } else if ((value.startsWith("**") && value.endsWith("**")) ||
+               (value.startsWith("__") && value.endsWith("__"))) {
+      const styled = styledBold(value.slice(2, -2)); styled.fg = peach; chunks.push(styled);
+    } else if ((value.startsWith("*") && value.endsWith("*")) ||
+               (value.startsWith("_") && value.endsWith("_"))) {
+      const styled = styledItalic(value.slice(1, -1)); styled.fg = peach; chunks.push(styled);
+    } else if (value.startsWith("~~") && value.endsWith("~~")) {
+      chunks.push(chunk(value.slice(2, -2), muted));
+    } else {
+      const link = value.match(/^\[([^\]]+)\]\(([^\)]+)\)$/);
+      if (link) { const styled = styledUnderline(link[1]); styled.fg = blue; styled.link = { url: link[2] }; chunks.push(styled); }
+      else chunks.push(chunk(value, base));
+    }
+    last = start + value.length;
+  }
+  if (last < text.length) chunks.push(chunk(text.slice(last), base));
+  return chunks;
+}
+
 function markdownChunks(text: string, base: RGBA): TextChunk[] {
   const chunks: TextChunk[] = [];
-  for (const line of text.split("\n")) {
-    const heading = line.match(/^#{1,3}\s+(.+)/);
-    const bullet = line.match(/^\s*[-*]\s+(.+)/);
-    const body = heading?.[1] || bullet?.[1] || line;
-    if (bullet) chunks.push(chunk("  • ", blue));
-    const parts = body.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
-    for (const part of parts) {
-      if (part.startsWith("`") && part.endsWith("`")) chunks.push(chunk(part.slice(1, -1), green));
-      else if (part.startsWith("**") && part.endsWith("**")) chunks.push(chunk(part.slice(2, -2), peach));
-      else chunks.push(chunk(part, heading ? peach : base));
+  const lines = text.replace(/\r/g, "").split("\n");
+  let inCode = false;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (/^\s*```/.test(line)) {
+      inCode = !inCode;
+      chunks.push(chunk(`${inCode ? "  code\n" : "  ───\n"}`, green));
+      continue;
     }
-    chunks.push(chunk("\n", base));
+    if (inCode) { chunks.push(chunk(`  ${line}\n`, green)); continue; }
+    if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) {
+      chunks.push(chunk(`  ${line.replace(/[^|:-]/g, "-")}\n`, muted));
+      continue;
+    }
+    const heading = line.match(/^\s*(#{1,6})\s+(.+)/);
+    const ordered = line.match(/^\s*(\d+)[.)]\s+(.+)/);
+    const bullet = line.match(/^\s*[-*+]\s+(.+)/);
+    const check = line.match(/^\s*[-*+]\s+\[([ xX])\]\s+(.+)/);
+    const quote = line.match(/^\s*>\s?(.*)/);
+    const table = line.trim().startsWith("|") && line.includes("|");
+    if (heading) {
+      const styled = styledBold(heading[2]); styled.fg = peach;
+      chunks.push(chunk(`${"  ".repeat(Math.max(0, heading[1].length - 1))}`, base), styled, chunk("\n", base));
+    } else if (check) {
+      chunks.push(chunk(`  ${check[1].toLowerCase() === "x" ? "✓" : "□"} `, check[1].toLowerCase() === "x" ? green : blue), ...styledInline(check[2], base), chunk("\n", base));
+    } else if (ordered) {
+      chunks.push(chunk(`  ${ordered[1]}. `, blue), ...styledInline(ordered[2], base), chunk("\n", base));
+    } else if (bullet) {
+      chunks.push(chunk("  • ", blue), ...styledInline(bullet[1], base), chunk("\n", base));
+    } else if (quote) {
+      chunks.push(chunk("  │ ", peach), ...styledInline(quote[1], base), chunk("\n", base));
+    } else if (table) {
+      const cells = line.trim().replace(/^\||\|$/g, "").split("|").map(cell => cell.trim());
+      chunks.push(chunk(`  │ ${cells.join("  │  ")} │\n`, base));
+    } else {
+      chunks.push(...styledInline(line, base), chunk("\n", base));
+    }
   }
   return chunks;
 }
 
 function eventLines(events: EngineEvent[]) {
   const chunks: TextChunk[] = [];
+  if (events.some(event => event.kind === "thinking") && !reasoningExpanded) {
+    chunks.push(chunk("  ◌ Reasoning trace collapsed · ctrl+r to expand\n", peach));
+  }
   for (const event of events) {
     if (event.kind === "heard" || event.kind === "user_msg") {
       chunks.push(chunk("YOU\n", blue), ...markdownChunks(textField(event, "text"), ink), chunk("\n", ink));
@@ -327,6 +389,8 @@ function eventLines(events: EngineEvent[]) {
       chunks.push(chunk(`  ▸ ${friendlyTool(textField(event, "tool"))}\n`, blue));
       const args = textField(event, "args");
       if (args) chunks.push(chunk(`    input: ${args.slice(0, 240)}\n`, muted));
+    } else if (event.kind === "thinking") {
+      if (reasoningExpanded) chunks.push(chunk(`  ◌ ${textField(event, "text")}\n`, peach));
     } else if (event.kind === "done") {
       chunks.push(chunk("COZY\n", green), ...markdownChunks(textField(event, "text"), ink), chunk("\n", ink));
     } else if (event.kind === "tool_result") {
@@ -438,6 +502,12 @@ async function shutdown(immediate = false) {
 }
 
 renderer.keyInput.on("keypress", key => {
+  if (key.ctrl && key.name === "r") {
+    key.preventDefault();
+    reasoningExpanded = !reasoningExpanded;
+    updateUi();
+    return;
+  }
   if (key.ctrl && key.name === "c") {
     key.preventDefault();
     void shutdown(true);

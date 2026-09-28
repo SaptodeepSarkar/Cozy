@@ -19,8 +19,8 @@ bash train.sh --resume              # continue the last run after interruption
 Voice input uses the same final-input stack as ArchFlow/Vaani: silence trim,
 faster-whisper CT2 beam-1 decoding, decoder no-speech rejection, conservative
 filler/repetition polish, and—when the sibling ArchFlow cleanup artifacts are
-available—a persistent Qwen3-0.6B cleanup LoRA for utterances of ten or more
-words. Override its paths with `COZY_CLEANUP_MODEL` and
+available—a persistent Qwen3-0.6B cleanup LoRA for voice utterances. Override
+its paths with `COZY_CLEANUP_MODEL` and
 `COZY_CLEANUP_ADAPTER`; set `COZY_CLEANUP_WORD_THRESHOLD` to tune the gate.
 
 Each run writes a revision/GPU manifest and one log per stage under
@@ -63,7 +63,7 @@ bash setup.sh
 bash run.sh                 # full voice loop
 bash run.sh --no-wake       # skip wake gate
 bash run.sh --calibrate     # print live wake scores for 30s
-bash run.sh --threshold 0.50
+bash run.sh --threshold 0.90
 
 # Stop a running global Cozy session
 cozystop

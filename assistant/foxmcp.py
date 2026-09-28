@@ -144,7 +144,27 @@ class FoxMCPClient:
         result = self._request("tools/call", {"name": name, "arguments": arguments})
         content = result.get("content", []) if isinstance(result, dict) else []
         parts = [item.get("text", "") for item in content if isinstance(item, dict)]
-        return "\n".join(part for part in parts if part) or json.dumps(result, ensure_ascii=False)
+        output = "\n".join(part for part in parts if part) or json.dumps(result, ensure_ascii=False)
+        # Firefox navigation tools acknowledge the request before the page's
+        # content script is ready. Hold the MCP call until a fresh DOM response
+        # is available, so the planner never has to race page loading.
+        tab_id = arguments.get("tab_id") if isinstance(arguments, dict) else None
+        if name == "tabs_create":
+            match = re.search(r"\bID\s+(\d+)\b", output)
+            tab_id = int(match.group(1)) if match else None
+        if name in {"tabs_create", "navigation_go_to_url", "navigation_reload"} and tab_id is not None:
+            deadline = time.monotonic() + float(os.environ.get("COZY_FOXMCP_DOM_TIMEOUT", "15"))
+            while time.monotonic() < deadline:
+                dom = self.call("content_get_text", {"tab_id": int(tab_id), "max_length": 12000})
+                lowered = dom.lower()
+                if "invalid tab id" in lowered:
+                    return output + "\nDOM error: " + dom
+                if not any(marker in lowered for marker in (
+                    "content script not available", "loading")):
+                    return output + "\nDOM ready:\n" + dom
+                time.sleep(0.4)
+            return output + "\nDOM readiness timed out; last response:\n" + dom
+        return output
 
     def stop(self) -> None:
         if self.process is not None and self.process.poll() is None:

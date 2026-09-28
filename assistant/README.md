@@ -19,7 +19,7 @@ dependencies. To run:
 bash run.sh                            # full voice loop
 bash run.sh --no-wake                  # skip wake gate (always transcribe)
 bash run.sh --calibrate                # 30s live wake-score log
-bash run.sh --threshold 0.50          # custom wake threshold
+bash run.sh --threshold 0.90          # custom wake threshold
 
 # or run directly
 ./.venv/bin/python runtime.py

@@ -52,20 +52,12 @@
       "desc": "Capture screen"
     },
     {
-      "name": "media.play",
-      "params": {}
-    },
-    {
-      "name": "media.pause",
-      "params": {}
-    },
-    {
-      "name": "media.next",
-      "params": {}
-    },
-    {
-      "name": "media.previous",
-      "params": {}
+      "name": "media.control",
+      "params": {
+        "action": "string - play, pause, play-pause, next, previous, stop, metadata, or status",
+        "player": "string optional - MPRIS player name such as spotify, vlc, firefox, or io.elementary.music"
+      },
+      "desc": "Control media across Spotify, VLC, browsers, and other MPRIS-compatible apps"
     },
     {
       "name": "window.minimize_all",
@@ -89,6 +81,8 @@
       "params": {
         "url": "string"
       }
+      ,
+      "desc": "Open a fresh Firefox tab through FoxMCP, wait for DOM readiness, and return the page content"
     },
     {
       "name": "browser.mcp",
@@ -217,6 +211,13 @@
         "name": "string, app name or window title fragment"
       },
       "desc": "Switch focus to an already-open app"
+    },
+    {
+      "name": "app.focus",
+      "params": {
+        "name": "string - app name or window title fragment"
+      },
+      "desc": "Focus an already-open application window without launching another instance"
     },
     {
       "name": "terminal.run",

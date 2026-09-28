@@ -8,7 +8,7 @@
 #   cozy --no-wake       # voice loop without wake gate
 #   cozy --no-tts        # log replies but don't speak
 #   cozy --fast-harness  # use the optimized harness (RAM + context)
-#   cozy --threshold 0.5 # custom wake threshold
+#   cozy --threshold 0.9 # custom wake threshold
 #   cozy --status        # which models are on disk
 #   cozy --stop          # kill any running cozy process
 

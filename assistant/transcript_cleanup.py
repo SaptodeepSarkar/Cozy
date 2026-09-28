@@ -1,8 +1,8 @@
 """ArchFlow-compatible transcript cleanup for Cozy's voice input.
 
 The deterministic pass is always available.  On the owner's workstation the
-same Qwen3-0.6B + cleanup LoRA used by ArchFlow is loaded once and reused for
-longer utterances; missing external artifacts safely degrade to local polish.
+same Qwen3-0.6B + cleanup LoRA used by ArchFlow is loaded once and reused;
+missing external artifacts safely degrade to local polish.
 """
 from __future__ import annotations
 
@@ -88,7 +88,9 @@ class TranscriptCleaner:
         self.lock = threading.Lock()
         self.threshold = max(0, int(os.environ.get("COZY_CLEANUP_WORD_THRESHOLD", "0")))
         self.model_dir = Path(os.environ.get("COZY_CLEANUP_MODEL", ARCHFLOW_CLEANUP / "base-model"))
-        self.adapter_dir = Path(os.environ.get("COZY_CLEANUP_ADAPTER", ARCHFLOW_CLEANUP / "dpo-sft"))
+        # ArchFlow's current source-grounded adapter supersedes the legacy DPO
+        # checkpoint and teaches formatting for long, multi-section dictation.
+        self.adapter_dir = Path(os.environ.get("COZY_CLEANUP_ADAPTER", ARCHFLOW_CLEANUP / "llm-v1"))
         self.status = "deterministic"
         self.load_error = ""
 

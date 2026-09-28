@@ -13,6 +13,7 @@ import json
 import time
 import urllib.error
 import urllib.request
+import time
 from pathlib import Path
 
 from ..harness_fast import Plugin, ASSISTANT
@@ -188,10 +189,23 @@ class LLMPlugin(Plugin):
             for name, description in (item.get("params") or {}).items():
                 desc = str(description)
                 lower = desc.lower()
-                typ = "array" if "list" in lower else "integer" if "int" in lower else "number" if "float" in lower else "string"
+                if "object" in lower or "dict" in lower or "json object" in lower:
+                    typ = "object"
+                elif "list" in lower or "array" in lower:
+                    typ = "array"
+                elif "int" in lower:
+                    typ = "integer"
+                elif "float" in lower or "number" in lower:
+                    typ = "number"
+                else:
+                    typ = "string"
                 prop = {"type": typ, "description": desc}
                 if typ == "array":
                     prop["items"] = {"type": "string"}
+                elif typ == "object":
+                    # MCP arguments are intentionally open-ended because each
+                    # discovered server publishes its own nested schema.
+                    prop["additionalProperties"] = True
                 properties[name] = prop
                 if "optional" not in lower:
                     required.append(name)
@@ -212,7 +226,15 @@ class LLMPlugin(Plugin):
             "messages": messages,
             "tools": self._openrouter_tools(schema),
             "tool_choice": "auto",
-            "max_tokens": max_new_tokens,
+            # Let reasoning models spend a bounded part of the completion on
+            # private deliberation. We deliberately exclude raw chain of
+            # thought from the UI/history; tool results are the evidence.
+            "reasoning": {
+                "enabled": True,
+                "max_tokens": max(256, int(os.environ.get("COZY_REASONING_TOKENS", "2048"))),
+                "exclude": True,
+            },
+            "max_tokens": max(max_new_tokens, 8192),
             "temperature": 0.1,
         }
         request = urllib.request.Request(
@@ -223,11 +245,38 @@ class LLMPlugin(Plugin):
                      "HTTP-Referer": "https://github.com/saptodeep/Cozy",
                      "X-Title": "Cozy personal assistant"},
             method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                body = json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            raise RuntimeError(f"OpenRouter request failed: {exc}") from exc
+        # Free providers are quota/rate limited even though they do not charge
+        # per token. Respect Retry-After, then expose the provider's message.
+        body = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(request, timeout=120) as response:
+                    body = json.loads(response.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                raw_error = exc.read().decode("utf-8", errors="replace")
+                try:
+                    detail = json.loads(raw_error).get("error", {})
+                    detail = detail.get("message") or detail.get("code") or raw_error
+                except (ValueError, AttributeError):
+                    detail = raw_error or str(exc)
+                if exc.code != 429 or attempt == 2:
+                    raise RuntimeError(
+                        f"OpenRouter HTTP {exc.code}: {detail}. "
+                        "Free models still have provider rate limits; "
+                        "set COZY_OPENROUTER_MODEL to another available model "
+                        "or wait and retry."
+                    ) from exc
+                retry_after = exc.headers.get("Retry-After", "")
+                try:
+                    delay = min(30.0, max(1.0, float(retry_after)))
+                except ValueError:
+                    delay = 2.0 * (attempt + 1)
+                time.sleep(delay)
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+                raise RuntimeError(f"OpenRouter request failed: {exc}") from exc
+        if body is None:
+            raise RuntimeError("OpenRouter returned no response")
         try:
             message = body["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:

@@ -12,7 +12,9 @@ import os
 import signal
 import shutil
 import subprocess
+import time
 import urllib.parse
+import re
 from pathlib import Path
 
 
@@ -82,6 +84,7 @@ def system_brightness_set(params):
 
 APP_ALIASES = {
     "browser": ["firefox", "google-chrome-stable", "chromium", "zen", "brave"],
+    "zen browser": ["zen"],
     "chrome": ["google-chrome-stable", "chromium", "brave"],
     "files": ["nautilus", "thunar", "dolphin", "nemo", "pcmanfm"],
     "terminal": ["gnome-terminal", "kgx", "x-terminal-emulator",
@@ -184,11 +187,85 @@ def screenshot_take(params=None):
     return False, "no screenshot tool (install grim)"
 
 
+def _mpris_services():
+    dbus = _which_any("dbus-send")
+    if not dbus:
+        return []
+    ok, output = _run([dbus, "--session", "--print-reply", "--dest=org.freedesktop.DBus",
+                       "/org/freedesktop/DBus", "org.freedesktop.DBus.ListNames"], timeout=5, max_output=4000)
+    if not ok:
+        return []
+    return sorted(set(re.findall(r'org\.mpris\.MediaPlayer2\.[A-Za-z0-9_.-]+', output)))
+
+
+def _mpris_call(service, method):
+    dbus = _which_any("dbus-send")
+    if not dbus or not re.fullmatch(r"org\.mpris\.MediaPlayer2\.[A-Za-z0-9_.-]+", service):
+        return False, "MPRIS is unavailable"
+    return _run([dbus, "--session", "--print-reply", "--dest=" + service,
+                 "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player." + method], timeout=8)
+
+
+def _mpris_property(service, prop):
+    dbus = _which_any("dbus-send")
+    if not dbus:
+        return False, "MPRIS is unavailable"
+    return _run([dbus, "--session", "--print-reply", "--dest=" + service,
+                 "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties.Get",
+                 "string:org.mpris.MediaPlayer2.Player", "string:" + prop], timeout=8)
+
+
 def media_control(action, params=None):
+    params = params or {}
+    player = str(params.get("player") or params.get("app") or "").strip()
+    action = str(action).strip().lower().replace("_", "-")
+    allowed = {"play", "pause", "play-pause", "next", "previous", "stop", "metadata", "status"}
+    if action not in allowed:
+        return False, "unsupported media action: " + action
     pc = _which_any("playerctl")
-    if not pc:
-        return False, "playerctl not installed"
-    return _run([pc, action])
+    if pc:
+        return _media_control_playerctl(pc, action, player)
+    services = _mpris_services()
+    if player and not player.startswith("org.mpris.MediaPlayer2."):
+        services = [s for s in services if s.rsplit(".", 1)[-1].lower() == player.lower()]
+    if not services:
+        return False, "no MPRIS media player found (install playerctl or start a compatible player)"
+    if action == "status":
+        rows = []
+        for service in services:
+            state_ok, state = _mpris_property(service, "PlaybackStatus")
+            title_ok, title = _mpris_property(service, "Metadata")
+            rows.append(f"{service.rsplit('.', 1)[-1]}: {state if state_ok else 'unknown'}"
+                        + (f" ({title})" if title_ok and title else ""))
+        return True, "\n".join(rows) or "no active media players"
+    service = services[0]
+    if action == "metadata":
+        return _mpris_property(service, "Metadata")
+    return _mpris_call(service, {"play-pause": "PlayPause"}.get(action, action.title()))
+
+
+def _media_control_playerctl(pc, action, player):
+    if action == "status" and not player:
+        ok, listed = _run([pc, "-l"], timeout=5)
+        if not ok or not listed:
+            return False, listed or "no MPRIS media players found"
+        rows = []
+        for candidate in listed.splitlines():
+            candidate = candidate.strip()
+            if not candidate:
+                continue
+            state_ok, state = _run([pc, f"--player={candidate}", "status"], timeout=5)
+            meta_ok, meta = _run([pc, f"--player={candidate}", "metadata", "--format", "{{artist}} - {{title}}"], timeout=5)
+            rows.append(f"{candidate}: {state if state_ok else 'unknown'}" + (f" ({meta})" if meta_ok and meta else ""))
+        return True, "\n".join(rows) or "no active media players"
+    command = [pc] + ([f"--player={player}"] if player else []) + [action]
+    ok, output = _run(command)
+    return ok, output or f"media {action}{f' for {player}' if player else ''}"
+
+
+def media_control_tool(params):
+    params = params or {}
+    return media_control(params.get("action") or params.get("command") or "status", params)
 
 
 def window_minimize_all(params=None):
@@ -234,6 +311,33 @@ def browser_open_url(params):
     url = str(params.get("url", "")).strip()
     if not url.startswith("http"):
         url = "https://" + url
+    # Keep navigation and DOM access in the same FoxMCP session.  xdg-open
+    # returns immediately and gives the planner neither a fresh tab id nor a
+    # readiness signal, which caused stale content_get_text calls.
+    try:
+        from foxmcp import call as fox_call
+        created = fox_call("tabs_create", {"url": url, "active": True})
+        match = re.search(r"\bID\s+(\d+)\b", str(created))
+        if match:
+            tab_id = int(match.group(1))
+            deadline = time.monotonic() + float(os.environ.get("COZY_FOXMCP_DOM_TIMEOUT", "15"))
+            last = ""
+            while time.monotonic() < deadline:
+                last = str(fox_call("content_get_text", {
+                    "tab_id": tab_id, "max_length": 12000}))
+                lowered = last.lower()
+                if "invalid tab id" in lowered or "unable to get text" in lowered:
+                    return False, f"FoxMCP could not read newly created tab {tab_id}: {last}"
+                if not any(marker in lowered for marker in (
+                    "content script not available", "loading", "no text content found")):
+                    return True, f"Opened {url} in Firefox tab {tab_id}. DOM:\n{last}"
+                time.sleep(0.4)
+            return True, f"Opened {url} in Firefox tab {tab_id}; DOM readiness timed out. Last response:\n{last}"
+        return True, f"Opened {url} in Firefox via FoxMCP: {created}"
+    except Exception:
+        # FoxMCP may be intentionally disabled or Firefox may not be running.
+        # Preserve the normal desktop URL opener as a transparent fallback.
+        pass
     xdg = _which_any("xdg-open")
     if not xdg:
         return False, "xdg-open missing"
@@ -735,6 +839,31 @@ def app_switch(params):
     name = str(params.get("name", "")).strip()
     if not name:
         return False, "no app name"
+    # Hyprland is the primary desktop here; wmctrl/xdotool do not reliably
+    # see native Wayland windows. Match both app class and title from JSON.
+    hypr = _which_any("hyprctl")
+    if hypr:
+        try:
+            raw = subprocess.run([hypr, "clients", "-j"], capture_output=True,
+                                 text=True, timeout=5)
+            clients = json.loads(raw.stdout) if raw.returncode == 0 else []
+            target = name.lower()
+            # Models often say "Zen browser" or "the Zen window" while the
+            # compositor reports only the executable class. Match meaningful
+            # words as well as the complete phrase.
+            ignored = {"the", "app", "window", "browser"}
+            terms = [part for part in re.findall(r"[a-z0-9_.-]+", target)
+                     if part not in ignored] or [target]
+            for client in clients if isinstance(clients, list) else []:
+                haystack = " ".join(str(client.get(key, "")) for key in ("class", "initialClass", "title", "initialTitle")).lower()
+                if (target in haystack or any(term in haystack for term in terms)) and client.get("address"):
+                    focused = subprocess.run(
+                        [hypr, "dispatch", "focuswindow", f"address:{client['address']}"],
+                        capture_output=True, text=True, timeout=5)
+                    if focused.returncode == 0:
+                        return True, "focused " + name
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            pass
     wm = _which_any("wmctrl")
     if wm:
         ok, out = _run([wm, "-l"], timeout=5)
@@ -759,6 +888,21 @@ def app_switch(params):
     return False, "could not find an open window matching " + name
 
 
+def app_focus(params):
+    name = str((params or {}).get("name", "")).strip()
+    if not name:
+        return False, "no app name"
+    ok, output = app_switch({"name": name})
+    if ok:
+        return ok, output
+    opened, open_output = app_open({"name": name})
+    if not opened:
+        return False, output or open_output
+    time.sleep(1.0)
+    focused, focus_output = app_switch({"name": name})
+    return focused, ("opened and focused " + name if focused else focus_output)
+
+
 HANDLERS = {
     "system.volume.set": lambda p: system_volume_set(p),
     "system.volume.mute": system_volume_mute,
@@ -770,6 +914,7 @@ HANDLERS = {
     "media.pause": lambda p: media_control("pause"),
     "media.next": lambda p: media_control("next"),
     "media.previous": lambda p: media_control("previous"),
+    "media.control": media_control_tool,
     "window.minimize_all": window_minimize_all,
     "settings.open": settings_open,
     "browser.search": browser_search,
@@ -795,6 +940,7 @@ HANDLERS = {
     "calc.compute": calc_compute,
     "app.list_running": app_list_running,
     "app.switch": app_switch,
+    "app.focus": app_focus,
     "terminal.run": terminal_run,
     "terminal.elevate": terminal_elevate,
 }
@@ -803,6 +949,13 @@ HANDLERS = {
 def _foxmcp_call(params):
     name = str(params.get("name", "")).strip()
     arguments = params.get("arguments") or {}
+    # Older model/tool schemas described MCP arguments as a string, so keep
+    # accepting that wire shape while the current schema emits an object.
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except (TypeError, ValueError):
+            return False, "browser.mcp arguments must be a JSON object"
     if not name or not isinstance(arguments, dict):
         return False, "browser.mcp requires a tool name and object arguments"
     try:

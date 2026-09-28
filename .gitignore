@@ -42,6 +42,15 @@ assistant/data/hf_glaive/
 # Local override with real API keys
 .mcp.json.local
 .cozy/
+/.env
+/:memory:.ses
+/assistant/:memory:.ses
+
+# Local model downloads and training runs (large, reproducible artifacts)
+assistant/model/adapters/
+assistant/model/bases/
+assistant/model/runs/
+assistant/model/sft_v2_runs/
 
 # cozy-vision deleted in v1.52 (whole folder removed).
 # Versióned model snapshots (regenerable via setup.sh + training scripts).
@@ -59,3 +68,8 @@ stt-finetune/checkpoints/
 # Backing symlinks (regenerated on first launch if missing)
 # stt-finetune/output/cozy_stt_v1_ct2_int8
 stt-finetune/output/hf_finetuned
+# Local Common Voice and feedback corpora
+stt-finetune/data/cv_indian_full/
+stt-finetune/data/stt_feedback/
+stt-finetune/data/v5-formatter-contract-eos-full.jsonl
+stt-finetune/data/v5-formatter-contract-v5-eos.jsonl

@@ -1,4 +1,5 @@
 import unittest
+import json
 from unittest.mock import Mock, patch
 from pathlib import Path
 import numpy as np
@@ -66,7 +67,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('terminal.elevate', output)
 
     def test_runtime_uses_room_safe_wake_threshold(self):
-        self.assertAlmostEqual(runtime._default_wake_threshold(), 0.60)
+        self.assertAlmostEqual(runtime._default_wake_threshold(), 0.90)
         with patch.dict("os.environ", {"COZY_WAKE_THRESHOLD": "0.72"}):
             self.assertAlmostEqual(runtime._default_wake_threshold(), 0.72)
 
@@ -131,6 +132,58 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(cleaner.threshold, 0)
         self.assertEqual(cleaner.clean("um open open firefox"), "open firefox")
 
+    def test_cleanup_defaults_to_archflow_current_adapter(self):
+        cleaner = TranscriptCleaner()
+        self.assertEqual(cleaner.adapter_dir.name, "llm-v1")
+
+    def test_openrouter_mcp_arguments_are_json_objects(self):
+        from rlm_harness.plugins.llm import LLMPlugin
+        tools = LLMPlugin._openrouter_tools([{
+            "name": "browser.mcp",
+            "params": {"name": "string", "arguments": "object arguments"},
+        }])
+        props = tools[0]["function"]["parameters"]["properties"]
+        self.assertEqual(props["arguments"]["type"], "object")
+
+    def test_browser_open_url_returns_ready_dom_from_fresh_foxmcp_tab(self):
+        calls = []
+        def fake_call(name, arguments):
+            calls.append((name, arguments))
+            if name == "tabs_create":
+                return "Created tab: ID 77 - Spotify - https://open.spotify.com"
+            return "Text content from Spotify (https://open.spotify.com):\nPlay"
+        with patch("foxmcp.call", side_effect=fake_call), \
+             patch.dict("os.environ", {"COZY_FOXMCP_DOM_TIMEOUT": "1"}):
+            ok, output = executor.browser_open_url({"url": "https://open.spotify.com"})
+        self.assertTrue(ok)
+        self.assertIn("tab 77", output)
+        self.assertIn("Play", output)
+        self.assertEqual(calls[0][0], "tabs_create")
+        self.assertEqual(calls[1][0], "content_get_text")
+
+    def test_foxmcp_accepts_legacy_stringified_arguments(self):
+        with patch("foxmcp.call", return_value="switched") as call:
+            ok, output = executor._foxmcp_call({
+                "name": "tabs_switch", "arguments": '{"tab_id": 7}'})
+        self.assertTrue(ok)
+        self.assertEqual(output, "switched")
+        call.assert_called_once_with("tabs_switch", {"tab_id": 7})
+
+    def test_stale_browser_calls_are_not_replayed_from_memory(self):
+        from rlm_harness.harness_fast import HarnessConfig, Trace, Turn
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as root:
+            cfg = HarnessConfig(state_dir=Path(root), trace_file=Path(root) / "trace.jsonl",
+                                summary_file=Path(root) / "summary.txt", recent_turns=8)
+            trace = Trace(cfg)
+            trace.append(Turn(role="user", content="open Spotify"))
+            trace.append(Turn(role="assistant", tool_calls=[{"function": {
+                "name": "browser.mcp", "arguments": '{"name":"tabs_switch"}'}}]))
+            trace.append(Turn(role="tool", name="browser.mcp", content="tab 48"))
+            messages, _ = trace.build_prompt("system", "tools")
+            self.assertEqual(len(messages), 2)
+            self.assertNotIn("tab 48", json.dumps(messages))
+
     def test_tts_splits_replies_before_queueing(self):
         self.assertEqual(
             tts._text_chunks("First sentence. Second sentence!"),
@@ -164,8 +217,9 @@ class PipelineTests(unittest.TestCase):
             "Please quit the calculator app.":
                 ("app.close", {"name": "gnome-calculator"}),
             "Capture what is on my screen right now.": ("screenshot.take", {}),
-            "Resume my music.": ("media.play", {}),
-            "Hold the song where it is.": ("media.pause", {}),
+            "Resume my music.": ("media.control", {"action": "play"}),
+            "Hold the song where it is.": ("media.control", {"action": "pause"}),
+            "Focus Zen.": ("app.focus", {"name": "zen"}),
         }
         for command, expected in cases.items():
             with self.subTest(command=command):

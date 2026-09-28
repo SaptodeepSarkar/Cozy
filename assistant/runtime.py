@@ -92,7 +92,7 @@ def _default_wake_threshold() -> float:
     on room noise/TV transients.  Override per room with COZY_WAKE_THRESHOLD
     (or `cozy --threshold`) after a `cozy --calibrate` run.
     """
-    return float(os.environ.get("COZY_WAKE_THRESHOLD", "0.60"))
+    return float(os.environ.get("COZY_WAKE_THRESHOLD", "0.90"))
 
 
 # A lone window must be exceptionally confident to skip the two-hit rule.
@@ -128,6 +128,38 @@ def _strip_reply_echo(reply: str) -> str:
         "", reply, count=1, flags=re.IGNORECASE,
     ).strip()
     return cleaned if cleaned else reply
+
+
+def _spoken_action_summary(harness, details, task_limited=False):
+    """Create a short spoken result while keeping technical detail in the UI."""
+    fallback = (
+        "I completed the actions I could and stopped because more work was needed."
+        if task_limited else "I completed the requested actions."
+    )
+    llm = harness.plugins.get("llm") if harness else None
+    if llm is None:
+        return fallback
+    facts = "\n".join(f"- {item}" for item in details)
+    prompt = (
+        "Give a concise spoken status update about these actions. Mention what "
+        "succeeded and what failed, including the useful reason. Do not mention "
+        "tool names, JSON, shell commands, step limits, or raw technical output. "
+        "Do not claim success when an action failed. Use two or three natural "
+        "sentences and no bullets.\n\n" + facts
+    )
+    try:
+        llm.load()
+        raw = llm.generate([
+            {"role": "system", "content": "You write accurate spoken task summaries."},
+            {"role": "user", "content": prompt},
+        ], max_new_tokens=256)
+        raw = re.sub(r"<think>.*?(?:</think>|$)", "", raw, flags=re.S).strip()
+        raw = re.sub(r"<\|[^>]+\|>", "", raw).strip()
+        if raw and "<tool_call>" not in raw and len(raw) <= 700:
+            return raw
+    except Exception:
+        pass
+    return fallback
 
 
 def _capture_preroll(audio_buf, audio_buf_fill: int, seconds: float,
@@ -203,9 +235,20 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                                                if t.get("description") else "")
                         for t in tools if t.get("name"))
                     if names:
+                        live_tools = [
+                            {"name": t.get("name"),
+                             "description": t.get("description", ""),
+                             "inputSchema": t.get("inputSchema", {})}
+                            for t in tools if t.get("name")
+                        ]
                         harness.system += (
-                            "\nMCP tools discovered at startup: " + names +
-                            ". Use the matching MCP tool wrapper with exact arguments."
+                            "\nLIVE MCP TOOLS DISCOVERED AT STARTUP:\n" +
+                            json.dumps(live_tools, ensure_ascii=False) +
+                            "\nUse browser.mcp with the exact live tool name and "
+                            "an object in arguments. For Firefox tabs, always call "
+                            "tabs_list first in this task, use only an id returned "
+                            "by that result, and never reuse an old tab id. After "
+                            "an invalid-tab error, call tabs_list before retrying."
                         )
                 elapsed = round(_time.monotonic() - started[name], 2)
                 json_emit("warmup", model=name, state="done", index=positions[name],
@@ -285,6 +328,7 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
         json_emit("heard", text=text)
         try:
             t0 = _time.time()
+            json_emit("thinking", text="Planning the task and checking the available actions.")
             name, args = harness.decide(text)
             dt = _time.time() - t0
             try:
@@ -315,15 +359,32 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                 completed = []
                 completed_details = []
                 successful_actions = set()
+                failed_actions = set()
                 duplicate_action = False
                 reply = ""
                 for _step in range(6):
+                    if name == "app.focus":
+                        target = str((args or {}).get("name", "the app"))
+                        json_emit("thinking", text=f"Checking whether {target} is already open before launching it.")
+                    elif name == "media.control" and str((args or {}).get("action", "")).lower() == "status":
+                        json_emit("thinking", text="Checking active media players and the current stream.")
                     json_emit("llm", tool=name, args=str(args)[:160], dt=_time.time() - t0)
                     action_key = (name, json.dumps(args or {}, sort_keys=True, ensure_ascii=False))
                     if action_key in successful_actions:
                         duplicate_action = True
                         output = "This exact action already succeeded in this task. Do not run it again; summarize the completed work."
                         json_emit("tool_result", name=name, out=output, skipped=True)
+                        name, args = harness.continue_after_tool(name, output)
+                        break
+                    if action_key in failed_actions:
+                        duplicate_action = True
+                        output = (
+                            "This exact action already failed in this task. Do not "
+                            "retry it with the same arguments. Inspect the error "
+                            "and choose a different action, such as refreshing "
+                            "the current browser state."
+                        )
+                        json_emit("tool_fail", name=name, out=output, skipped=True)
                         name, args = harness.continue_after_tool(name, output)
                         break
                     if name == "rlm.delegate":
@@ -338,9 +399,15 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                         completed_details.append(f"{name}: {output[:240] or 'completed'}")
                         json_emit("tool_result", name=name, out=output)
                     else:
+                        failed_actions.add(action_key)
                         completed_details.append(f"{name}: failed - {output[:240] or 'no details'}")
                         json_emit("tool_fail", name=name, out=output)
                     name, args = harness.continue_after_tool(name, output)
+                    if name and name != "none":
+                        json_emit(
+                            "thinking",
+                            text="Inspecting that result and deciding whether another step is needed.",
+                        )
                     try:
                         used, limit = harness.context_usage()
                         json_emit("context", used=used, limit=limit)
@@ -354,16 +421,17 @@ def run_json_mode(harness, executor, threshold=0.5, *, voice=True, no_wake=False
                         break
                 if completed_details:
                     detail_text = "\n".join(f"- {item}" for item in completed_details)
-                    if name and not duplicate_action:
-                        reply = f"I reached the action limit after completing these steps:\n{detail_text}"
-                    elif duplicate_action:
-                        reply = f"I completed these steps and ignored a repeated action:\n{detail_text}"
-                    else:
-                        reply = ((reply + "\n\n") if reply else "") + f"Completed steps:\n{detail_text}"
+                    task_limited = bool(name and not duplicate_action)
+                    spoken_reply = _spoken_action_summary(
+                        harness, completed_details, task_limited)
+                    reply = spoken_reply
+                else:
+                    spoken_reply = reply
                 reply = _strip_reply_echo(reply or "Completed the requested action.")
                 if tts_enabled and is_available():
-                    json_emit("tts", text=reply)
-                    tts_speak(reply)
+                    spoken_reply = _strip_reply_echo(spoken_reply or reply)
+                    json_emit("tts", text=spoken_reply)
+                    tts_speak(spoken_reply)
                 json_emit("done", text=reply, dt=_time.time() - t0)
         except Exception as exc:
             json_emit("error", msg=f"command failed: {exc}")

@@ -321,6 +321,14 @@ class Trace:
                          "content": f"Earlier context summary: {self._summary[-800:]}"})
         recent_msgs = []
         for t in self._recent:
+            # Browser tab ids are process/session state, not durable memory.
+            # Keeping old browser calls in the prompt teaches the planner to
+            # reuse dead ids such as a tab from a previous Firefox session.
+            if t.name == "browser.mcp" or any(
+                tc.get("function", {}).get("name") == "browser.mcp"
+                for tc in t.tool_calls
+            ):
+                continue
             d = {"role": t.role}
             if t.content:
                 content = t.content
@@ -619,7 +627,16 @@ class FastHarness:
                        "briefly and warmly without tools. After a tool "
                        "result, inspect it: call the next tool when work "
                        "remains, otherwise give a concise useful summary. "
-                       "Never repeat raw command output to the user.")
+                       "Never repeat raw command output to the user. "
+                       "Think through the task before acting: for focus requests, "
+                       "check whether the app is already open and use app.focus "
+                       "without launching duplicates; if it is absent, open it and "
+                       "then focus it. For media requests, inspect media.control "
+                       "with action status when the player or current stream is "
+                       "unclear, then use media.control with the simplest action "
+                       "and optional player name. Never use terminal.run, shell "
+                       "commands, or browser automation to control media. After every action, inspect its "
+                       "result before choosing the next action.")
         self._register_default_plugins()
 
     def _register_default_plugins(self) -> None:
@@ -689,13 +706,17 @@ class FastHarness:
                 return "", {}
             llm.load()
             llm.touch()
-            raw = llm.generate(msgs, max_new_tokens=160)
+            # Tool selection and the final explanation share one response.
+            # 160 tokens regularly truncates multi-step plans and summaries.
+            output_budget = max(256, int(os.environ.get("COZY_LLM_OUTPUT_TOKENS", "4096")))
+            raw = llm.generate(msgs, max_new_tokens=output_budget)
             # A sentinel is not a conversational answer. Retry once without
             # stale trace context; never execute the sentinel as a tool.
             if raw.strip().lower() in {"", "none", "null"}:
                 raw = llm.generate([
                     {"role": "system", "content": self.system},
-                    {"role": "user", "content": user_text}], max_new_tokens=96)
+                    {"role": "user", "content": user_text}],
+                    max_new_tokens=min(output_budget, 512))
             if raw.strip().lower() in {"", "none", "null"}:
                 raw = "I couldn't understand that request. Please try rephrasing it."
             # 5. Extract tool call
@@ -761,7 +782,8 @@ class FastHarness:
             return "", {}
         llm.load()
         llm.touch()
-        raw = llm.generate(messages, max_new_tokens=180)
+        output_budget = max(256, int(os.environ.get("COZY_LLM_OUTPUT_TOKENS", "4096")))
+        raw = llm.generate(messages, max_new_tokens=output_budget)
         if raw.strip().lower() in {"", "none", "null"}:
             raw = "Completed the requested action."
         name, args = extract_tool_call(raw)
@@ -799,6 +821,31 @@ class FastHarness:
                 "rg -n -i --glob '!*.lock' --glob '!*.jsonl' '(TODO|FIXME|BUG|XXX|except Exception)' . 2>/dev/null | head -200"
             )
             return "terminal.run", {"command": command, "cwd": project, "timeout": 45}
+        # Focus is stateful: app.focus checks existing windows first and only
+        # launches when no matching window exists. Keep this ahead of the
+        # generic intent router so a focus request cannot become app.open.
+        focus_match = re.search(
+            r"\b(?:focus|switch\s+to)\s+(?:the\s+)?(.+?)(?:\s+window)?\s*[.!?]*$",
+            lower,
+        )
+        if focus_match:
+            name = focus_match.group(1).strip().rstrip(".!?").strip()
+            if name and name not in {"it", "this", "that", "the app"}:
+                return "app.focus", {"name": name}
+        media_status_request = re.search(r"\bwhat(?:'s| is)\s+playing\b", lower)
+        if (re.search(r"\b(?:play|pause|resume|stop|skip|next|previous|rewind)\b", lower) and re.search(
+                r"\b(?:music|song|track|stream|media|spotify|youtube|vlc|player)\b", lower)) or media_status_request:
+            if re.search(r"\b(?:pause|stop)\b", lower):
+                action = "pause" if "pause" in lower else "stop"
+            elif re.search(r"\b(?:next|skip)\b", lower):
+                action = "next"
+            elif "previous" in lower or "rewind" in lower:
+                action = "previous"
+            elif re.search(r"\b(?:what(?:'s| is)\s+playing|status)\b", lower):
+                action = "status"
+            else:
+                action = "play"
+            return "media.control", {"action": action}
         from intents import route
         decision = route(user_text)
         tool = decision.get("tool")
@@ -820,9 +867,9 @@ class FastHarness:
         if tool == "close_app":
             return "app.close", {"name": args["app"]}
         if tool == "media_play":
-            return "media.play", {}
+            return "media.control", {"action": "play"}
         if tool == "media_pause":
-            return "media.pause", {}
+            return "media.control", {"action": "pause"}
         if tool == "query_date":
             return "date.now", {}
         if tool == "battery_status":
