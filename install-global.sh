@@ -19,8 +19,11 @@ mkdir -p "$APP_DIR"
 ICON="$ROOT/hermes-agent/apps/desktop/assets/icon.png"
 if [[ ! -f "$ICON" ]]; then ICON="utilities-terminal"; fi
 sed -e "s|@COZY_LAUNCHER@|$TARGET|g" -e "s|@COZY_ICON@|$ICON|g" \
-  "$ROOT/cozy.desktop.in" > "$APP_DIR/cozy.desktop"
-chmod 0644 "$APP_DIR/cozy.desktop"
+  "$ROOT/cozy.desktop.in" > "$APP_DIR/com.nousresearch.hermes.desktop"
+chmod 0644 "$APP_DIR/com.nousresearch.hermes.desktop"
+# Hermes installs the launcher under this desktop-file ID too. Reuse that ID
+# above, and remove the redundant Cozy entry created by earlier installer runs.
+rm -f "$APP_DIR/cozy.desktop"
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
 fi
@@ -32,4 +35,4 @@ for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
 done
 case ":${PATH}:" in *":$BIN:"*) ;; *) export PATH="$BIN:$PATH" ;; esac
 echo "Cozy is globally available as: $TARGET"
-echo "Cozy desktop launcher installed at: $APP_DIR/cozy.desktop"
+echo "Cozy desktop launcher installed at: $APP_DIR/com.nousresearch.hermes.desktop"
