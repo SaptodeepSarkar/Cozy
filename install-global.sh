@@ -10,9 +10,7 @@ if [[ -e "$TARGET" && ! -L "$TARGET" ]]; then
   exit 1
 fi
 ln -sfn "$ROOT/cozy" "$TARGET"
-for name in cozystop cozystatus; do
-  ln -sfn "$ROOT/cozy" "$BIN/$name"
-done
+ln -sfn "$ROOT/cozy" "$BIN/cozystatus"
 for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
   touch "$rc"
   if ! grep -qF "# Cozy user-local bin" "$rc" 2>/dev/null; then

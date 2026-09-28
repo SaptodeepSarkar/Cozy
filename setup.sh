@@ -1,155 +1,33 @@
 #!/usr/bin/env bash
-# Cozy project setup - one-shot environment installer.
-# Creates three independent venvs (one per component) with all deps.
-# Run from the project root: bash setup.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-PY_VERSION="${PY_VERSION:-3.11}"
-echo "=== Cozy project setup (Python $PY_VERSION) ==="
-echo
-
-# 0. System packages (Arch / Debian / Ubuntu).
-# pyaudio needs portaudio headers; libsndfile is needed by soundfile/librosa;
-# ffmpeg by librosa. python3.11 from system packages on Arch ships in extra/.
-if command -v pacman >/dev/null 2>&1 && [[ "${SKIP_PACMAN:-0}" != "1" ]]; then
-    echo "[setup] pacman -S python portaudio libsndfile ffmpeg ..."
-    sudo pacman -S --needed --noconfirm \
-        python python-pip \
-        portaudio libsndfile ffmpeg sox \
-        alsa-utils pipewire pipewire-alsa pipewire-pulse wireplumber \
-        base-devel git curl || true
-elif command -v apt >/dev/null 2>&1 && [[ "${SKIP_APT:-0}" != "1" ]]; then
-    echo "[setup] apt-get install python3 portaudio libsndfile ffmpeg ..."
-    sudo apt-get update
-    sudo apt-get install -y \
-        python3 python3-venv python3-pip \
-        portaudio19-dev libsndfile1 ffmpeg sox \
-        libnotify-bin alsa-utils pulseaudio-utils \
-        build-essential git curl || true
+if ! command -v git >/dev/null || ! command -v uv >/dev/null; then
+  echo "Install git and uv first (https://docs.astral.sh/uv/getting-started/installation/)." >&2
+  exit 1
 fi
 
-# 1. wakeword venv: livekit-wakeword, training deps
-echo "[1/3] wakeword/.venv ..."
-if [[ ! -d wakeword/.venv ]]; then
-    uv venv wakeword/.venv --python "$PY_VERSION" --seed
-fi
-uv pip install --python wakeword/.venv/bin/python --quiet --upgrade pip
-uv pip install --python wakeword/.venv/bin/python --quiet -e "wakeword/[listener,train,eval,export]"
-
-# 2. stt-finetune venv: faster-whisper, transformers, torch
-echo "[2/3] stt-finetune/.venv ..."
-if [[ ! -d stt-finetune/.venv ]]; then
-    uv venv stt-finetune/.venv --python "$PY_VERSION" --seed --system-site-packages
-fi
-uv pip install --python stt-finetune/.venv/bin/python --quiet --upgrade pip
-uv pip install --python stt-finetune/.venv/bin/python --quiet \
-    'transformers>=4.51,<4.56' datasets accelerate peft jiwer soundfile librosa \
-    ctranslate2 faster-whisper pyarrow
-
-# 3. assistant venv: wake + STT + LLM runtime deps
-echo "[3/3] assistant/.venv ..."
-if [[ ! -d assistant/.venv ]]; then
-    uv venv assistant/.venv --python "$PY_VERSION" --seed
-fi
-uv pip install --python assistant/.venv/bin/python --quiet --upgrade pip
-uv pip install --python assistant/.venv/bin/python --quiet \
-    livekit-wakeword pyaudio sounddevice soundfile \
-    faster-whisper librosa 'transformers>=4.51,<4.56' torch torchaudio \
-    'nvidia-cublas-cu12>=12.4,<13' \
-    'huggingface-hub>=0.34,<1' safetensors tokenizers pyyaml numpy \
-    peft trl accelerate kokoro silero-vad spacy
-
-# Kokoro's English phonemizer uses this separate spaCy pipeline. Install it
-# explicitly because spaCy otherwise tries to download a compatibility table
-# during Cozy startup, which makes offline startup look like a TTS crash.
-if ! assistant/.venv/bin/python -c 'import spacy; raise SystemExit(0 if spacy.util.is_package("en_core_web_sm") else 1)' 2>/dev/null; then
-    echo "[setup] Installing spaCy English model for Kokoro ..."
-    uv pip install --python assistant/.venv/bin/python --quiet \
-        https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+if [[ ! -f hermes-agent/setup-hermes.sh ]]; then
+  git submodule update --init --recursive hermes-agent
 fi
 
-# 4. Download the LLM base model if it's not already on disk.
-# Qwen3-0.6B is small (~1.2 GB) and free. Required for `cozy` to start.
-LLM_DIR="$ROOT/assistant/model/cozy-llm-v1"
-if [[ ! -f "$LLM_DIR/model.safetensors" ]]; then
-    if [[ "${SKIP_MODEL_DOWNLOAD:-0}" == "1" ]]; then
-        echo "[setup] SKIP_MODEL_DOWNLOAD=1; skipping LLM fetch"
-    else
-        echo "[setup] Fetching Qwen3-0.6B base model into $LLM_DIR ..."
-        assistant/.venv/bin/python - <<PY
-import os
-from pathlib import Path
-from huggingface_hub import snapshot_download
-target = Path("$LLM_DIR")
-target.mkdir(parents=True, exist_ok=True)
-snapshot_download(
-    "Qwen/Qwen3-0.6B",
-    local_dir=str(target),
-    allow_patterns=[
-        "*.json", "*.txt", "*.model", "*.tiktoken",
-        "*.safetensors", "tokenizer*", "chat_template*",
-    ],
-)
-print(f"[setup] LLM weights in {target}")
-PY
-    fi
-fi
+echo "[1/3] Preparing Hermes Agent runtime..."
+(cd hermes-agent && bash setup-hermes.sh --runtime-only)
 
-# Download Kokoro's neural TTS weights during setup so the first response is
-# not delayed by a network fetch. Set SKIP_TTS_MODEL_DOWNLOAD=1 to defer it.
-if [[ "${SKIP_TTS_MODEL_DOWNLOAD:-0}" != "1" ]]; then
-    echo "[setup] Fetching Kokoro-82M TTS weights ..."
-    HF_HUB_DISABLE_PROGRESS_BARS=1 assistant/.venv/bin/python - <<'PY'
-from huggingface_hub import snapshot_download
-snapshot_download("hexgrad/Kokoro-82M", allow_patterns=["*.json", "*.pth", "voices/*.pt", "*.md"])
-print("[setup] Kokoro weights ready")
-PY
-fi
+echo "[2/3] Installing local voice dependencies..."
+(cd hermes-agent && ./hermes pm install --extra wake-livekit --extra voice --extra audio-io)
 
-# Install the cozy shell alias if it isn't already sourced.
-ALIAS_LINE="source \"$ROOT/cozy.shell\""
-for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    [ -f "$rc" ] || touch "$rc"
-    if ! grep -qF "cozy.shell" "$rc" 2>/dev/null; then
-        printf "\n# Cozy voice assistant\n%s\n" "$ALIAS_LINE" >> "$rc"
-    fi
-done
-# Kokoro-82M is installed and downloaded above; no system package needed.
-echo "  TTS: Kokoro-82M (weights cached locally)"
-echo
-# 4. Terminal UI: deterministic install from package-lock.json.
-if command -v npm >/dev/null 2>&1; then
-    echo "[ui] assistant/tui-node ..."
-    npm --prefix assistant/tui-node ci --silent
+if [[ -f wakeword/output/hey_cozy/hey_cozy.onnx ]]; then
+  echo "[3/3] Installing Cozy wake-word model into Hermes home..."
+  install -d "${HERMES_HOME:-$HOME/.hermes}/wakewords"
+  install -m 0644 wakeword/output/hey_cozy/hey_cozy.onnx \
+    "${HERMES_HOME:-$HOME/.hermes}/wakewords/hey_cozy.onnx"
 else
-    echo "[ui] skipped (Node.js 20+ and npm are required for the terminal UI)" >&2
+  echo "[3/3] Cozy wake-word model not present; voice wake activation will need a model."
 fi
 
-echo "=== Setup complete ==="
 echo
-echo "Three venvs created:"
-echo "  wakeword/.venv/        - wake word training + inference"
-echo "  stt-finetune/.venv/   - speech-to-text training + inference"
-echo "  assistant/.venv/      - full voice assistant runtime"
-echo
-echo "Run the assistant:"
-echo "  cd wakeword && ./.venv/bin/python ../assistant/runtime.py"
-echo "  (or: bash run.sh)"
-echo
-echo "Train the wake word model:"
-echo "  cd wakeword && source .venv/bin/activate"
-echo "  uv run livekit-wakeword setup --config configs/hey_cozy_test.yaml --skip-acav"
-echo "  uv run livekit-wakeword run configs/hey_cozy_test.yaml"
-echo
-echo "Train the STT model:"
-echo "  cd stt-finetune && source env.sh && .venv/bin/python scripts/train_lora.py"
-echo
-echo "Train the LLM (function-calling SFT):"
-echo "  cd assistant && .venv/bin/python sft_qwen.py"
-
-if [[ "${COZY_SKIP_GLOBAL:-0}" != "1" ]]; then
-    bash "$ROOT/install-global.sh"
-fi
+echo "Setup finished. Start the desktop with: ./cozy"
+echo "The first desktop launch may download/build its UI and computer-use dependencies."

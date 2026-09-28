@@ -1,0 +1,9 @@
+[submodule "hermes-agent"]
+	path = hermes-agent
+	url = https://github.com/SaptodeepSarkar/cozy-hermes.git
+[submodule "stt-finetune/third_party/openai-whisper"]
+	path = stt-finetune/third_party/openai-whisper
+	url = https://github.com/openai/whisper.git
+[submodule "stt-finetune/third_party/whisper.cpp"]
+	path = stt-finetune/third_party/whisper.cpp
+	url = https://github.com/ggml-org/whisper.cpp.git
