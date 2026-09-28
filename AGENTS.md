@@ -8,7 +8,8 @@ agent-runtime changes in the `hermes-agent/` submodule and commit/push them to
 
 - `hermes-agent/` — forked Hermes harness, GUI and tool integrations.
 - `wakeword/` — “Hey Cozy” model, training and evaluation.
-- `stt-finetune/` — retained speech-to-text experiments.
+- ArchFlow's V6 Whisper and V6 cleanup artifacts live outside Cozy under
+  `$XDG_DATA_HOME/vaani/`; do not duplicate them into this repository.
 - `audio/` — local Linux audio helpers.
 - `cozy`, `run.sh`, `setup.sh` — thin launch/setup wrappers.
 
@@ -17,8 +18,10 @@ agent-runtime changes in the `hermes-agent/` submodule and commit/push them to
 - `wakeword/output/hey_cozy/hey_cozy.onnx` is the local wake model. Do not
   overwrite it without a reproducible evaluation; setup copies it to Hermes'
   wakewords directory.
-- `stt-finetune/output/` contains user-trained STT artifacts; do not delete or
-  regenerate them as part of agent work.
+- Local STT comes from the ArchFlow V6 CT2 export, selected by the owner.
+- Local transcript cleanup uses ArchFlow's V6 seq2seq adapter and a strict
+  source-preservation guard. If model startup or validation fails, retain raw
+  STT text.
 - Wake scores overlap: do not claim a robust trigger threshold based only on a
   short positive or negative clip. Collect labelled samples and report both
   false-positive and miss rates.

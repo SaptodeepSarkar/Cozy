@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Cozy
+GenericName=Voice-first desktop assistant
+Comment=Talk to your computer and let Cozy operate it
+Exec=@COZY_LAUNCHER@ --desktop
+Icon=@COZY_ICON@
+Terminal=false
+Categories=Utility;Accessibility;
+StartupNotify=true
+StartupWMClass=com.nousresearch.hermes

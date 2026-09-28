@@ -28,7 +28,11 @@ computer-use tools; `./cozy --status` runs Hermes diagnostics.
 Cozy's local wake classifier is integrated into the Hermes fork as the
 `livekit` provider. Setup copies `wakeword/output/hey_cozy/hey_cozy.onnx` to
 `$HERMES_HOME/wakewords/hey_cozy.onnx` (normally `~/.hermes/wakewords/`). Voice
-and wake-word behavior can be configured in Hermes settings. Don't lower the
+setup points local STT at the ArchFlow V6 CTranslate2 export when it is present
+and enables the local V6 cleanup adapter from the neighboring ArchFlow checkout.
+The Whisper and cleanup weights stay in ArchFlow's user model cache; Cozy does
+not duplicate them. Cleanup runs locally and rejects text rewrites that change
+spoken content, negation, or numbers. Don't lower the
 wake threshold blindly: a local 20-second negative calibration sample reached
 0.72, while known positive samples peaked around 0.72. That overlap means a
 single threshold cannot currently provide both reliable recall and few false
@@ -48,12 +52,13 @@ support, so computer-use coverage must be validated on the actual machine.
 
 - `hermes-agent/` — Cozy's fork of Hermes Agent, tracked as a submodule.
 - `wakeword/` — “Hey Cozy” dataset, training configuration and model workflow.
-- `stt-finetune/` — retained speech-recognition experiments and training data.
+- Speech models are maintained in the adjacent `ArchFlow` project and its
+  `$XDG_DATA_HOME/vaani` model cache; Cozy keeps no duplicate fine-tuning tree.
 - `audio/` — Linux audio routing configuration and helper scripts.
 
-The retired `assistant/` runtime, bespoke RLM harness, FoxMCP integration and
-custom LLM artifacts were removed from the working tree. Their previous state
-is recoverable from the preceding Cozy GitHub commit if needed.
+The retired `assistant/` runtime, bespoke RLM harness, FoxMCP integration,
+legacy STT fine-tuning tree, and custom LLM artifacts were removed from the
+working tree. Tracked history is recoverable from preceding Cozy GitHub commits.
 
 ## Upstream and platform notes
 

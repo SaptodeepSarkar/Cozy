@@ -10,18 +10,11 @@ artifacts/
 checkpoints/
 :memory:.ses
 
-# Wakeword and STT generated downloads/checkpoints
+# Wakeword generated downloads/checkpoints
 wakeword/.venv/
 wakeword/work/
 wakeword/data/
 wakeword/output_v1.1/
-stt-finetune/.venv/
-stt-finetune/checkpoints/
-stt-finetune/output/
-stt-finetune/data/cv_indian_full/
-stt-finetune/data/stt_feedback/
-stt-finetune/data/v5-formatter-contract-eos-full.jsonl
-stt-finetune/data/v5-formatter-contract-v5-eos.jsonl
 
 # User-local Hermes configuration/state and credentials
 .cozy/
