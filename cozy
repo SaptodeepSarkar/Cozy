@@ -7,6 +7,16 @@ ROOT="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 HERMES="$ROOT/hermes-agent/hermes"
 export COZY_BRANDED=1
 
+# The desktop app otherwise probes Hermes' separate default install location
+# (~/.hermes/hermes-agent). Cozy's setup owns the runtime under this checkout,
+# so point Electron at that already-installed Cozy backend before it considers
+# its generic first-run install/connect flow.
+if [[ -z "${HERMES_DESKTOP_HERMES:-}" ]]; then
+  COZY_RUNTIME="$ROOT/hermes-agent/.hermes/bin/hermes"
+  if [[ ! -x "$COZY_RUNTIME" ]]; then COZY_RUNTIME="$HERMES"; fi
+  export HERMES_DESKTOP_HERMES="$COZY_RUNTIME"
+fi
+
 if [[ "$(basename "$0")" == cozystatus ]]; then
   set -- --status "$@"
 fi
