@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || realpath "$0")"
 ROOT="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 HERMES="$ROOT/hermes-agent/hermes"
+export COZY_BRANDED=1
 
 if [[ "$(basename "$0")" == cozystatus ]]; then
   set -- --status "$@"
