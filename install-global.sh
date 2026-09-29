@@ -16,7 +16,7 @@ ln -sfn "$ROOT/cozy" "$BIN/cozystatus"
 # without opening a terminal. The entry always targets this checked-out fork.
 APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$APP_DIR"
-ICON="$ROOT/hermes-agent/apps/desktop/assets/icon.png"
+ICON="$ROOT/hermes-agent/apps/desktop/assets/cozy-mark.svg"
 if [[ ! -f "$ICON" ]]; then ICON="utilities-terminal"; fi
 sed -e "s|@COZY_LAUNCHER@|$TARGET|g" -e "s|@COZY_ICON@|$ICON|g" \
   "$ROOT/cozy.desktop.in" > "$APP_DIR/com.cozyassistant.cozy.desktop"
